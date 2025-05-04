@@ -1,0 +1,29 @@
+
+# Scripts for building standalone gcc
+
+The scripts here will build a standalone gcc along with version compatible tools.
+
+There is a lot more to a gcc than one might imagine. It was developed as though an integral part of Unix.  Hence, the standalone build has top level directories with many things in them, in parallel to the top level directories a person would find on a Unix system.
+
+## .gitignore
+
+* If there is no top level `.gitignore`, `setup_project.sh` will create one.
+* The synthesized `.gitignore` references itself, so it will not get checked in.
+* No script, including`clean_dist.sh`, will  delete an existing `.gitignore`.
+
+## Clean
+
+* clean_build.sh - for saving space after the build is done. The build scripts are idempotent, so in an ideal world this need not be run to do a rebuild.
+
+* clean_dist.sh - with on exception, this will delete everything that was synthesized.  The one exception is that .gitignore is moved to the tmp directory so as to preserve any changes a user might have been made, and the contents of the tmp directory are not removed.
+
+* clean_tmp.sh - wipes clean all contents of the temporary directory.
+
+## Setup
+
+* setup_project.sh - makes the directory structure for the build, creates a `tmp/` directory under the project. If it does not already exist, creates a .gitignore file with all the created directories listed.
+
+## Download
+
+* download_upstream_sources.sh - goes to the Internet, fetches all the sources that have not already been fetched. Then expands the sources into the proper sub-directory under `source/1.
+
