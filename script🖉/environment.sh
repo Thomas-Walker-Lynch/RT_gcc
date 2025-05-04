@@ -24,12 +24,13 @@ cd $SCRIPT_DIR
   export BUILD_DIR="$ROOT/build"
   export LOGDIR="$ROOT/log"
   export UPSTREAM="$ROOT/upstream"
+  export SRC=$ROOT/source
 
   # Synthesized directory lists
   PROJECT_DIR_LIST=(
     "$LOGDIR"
     "$SYSROOT" "$TOOLCHAIN" "$BUILD_DIR"
-    "$UPSTREAM"
+    "$UPSTREAM" "$SRC"
   )
   # list these in the order they can be deleted
   PROJECT_SUBDIR_LIST=(
@@ -39,7 +40,6 @@ cd $SCRIPT_DIR
   )
 
   # Source directories
-  export SRC=$ROOT/source
   export LINUX_SRC="$SRC/linux-$LINUX_VER"
   export BINUTILS_SRC="$SRC/binutils-$BINUTILS_VER"
   export GCC_SRC="$SRC/gcc-$GCC_VER"
@@ -77,15 +77,15 @@ cd $SCRIPT_DIR
   export UPSTREAM_TARBALL_LIST=(
     "$LINUX_TARBALL"
     "https://cdn.kernel.org/pub/linux/kernel/v6.x/$LINUX_TARBALL"
-    "$ROOT/linux-$LINUX_VER"
+    "$UPSTREAM/linux-$LINUX_VER"
     
     "$BINUTILS_TARBALL"
     "https://ftp.gnu.org/gnu/binutils/$BINUTILS_TARBALL"
-    "$ROOT/binutils-$BINUTILS_VER"
+    "$UPSTREAM/binutils-$BINUTILS_VER"
     
     "$GLIBC_TARBALL"
     "https://ftp.gnu.org/gnu/libc/$GLIBC_TARBALL"
-    "$ROOT/glibc-$GLIBC_VER"
+    "$UPSTREAM/glibc-$GLIBC_VER"
   )
 
   # Git Repositories (URL, Branch, Destination Directory)
@@ -93,11 +93,12 @@ cd $SCRIPT_DIR
   export GCC_BRANCH="releases/gcc-15"
 
   # Git Repo Info: Repository URL, Branch, Destination Directory
+  # Repo's expand on load so go directly into $SRC
   export UPSTREAM_GIT_REPO_LIST=(
 
     "$GCC_REPO"
     "$GCC_BRANCH"
-    "$ROOT/gcc-$GCC_VER"
+    "$SRC/gcc-$GCC_VER"
 
      #currently there is no second repo   
   )
