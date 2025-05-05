@@ -1,4 +1,9 @@
 #!/bin/bash
+# run this to force repeat of the downloads
+# removes project tarballs from upstream/
+# removes project repos from source/
+# does not remove non-project files
+
 set -euo pipefail
 
 source "$(dirname "$0")/environment.sh"

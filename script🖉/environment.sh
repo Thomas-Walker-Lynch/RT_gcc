@@ -5,6 +5,22 @@ echo "ROOT: $ROOT"
 cd $SCRIPT_DIR
 
 #--------------------------------------------------------------------------------
+# tools
+
+  # machine target
+  export HOST=$(gcc -dumpmachine)
+
+#  export MAKE_JOBS=$(nproc)
+#  export MAKE="make -j$MAKE_JOBS"
+  export MAKE_JOBS=$(getconf _NPROCESSORS_ONLN)
+  export MAKE=make
+
+
+  # Compiler path prefixes
+  export CC_FOR_BUILD=$(command -v gcc)
+  export CXX_FOR_BUILD=$(command -v g++)
+
+#--------------------------------------------------------------------------------
 # tool versions
 
   export LINUX_VER=6.8
@@ -104,17 +120,4 @@ cd $SCRIPT_DIR
   )
  
 
-
-#--------------------------------------------------------------------------------
-# tools
-
-  # machine target
-  export HOST=$(gcc -dumpmachine)
-
-  export MAKE_JOBS=$(nproc)
-  export MAKE="make -j$MAKE_JOBS"
-
-  # Compiler path prefixes
-  export CC_FOR_BUILD=$(command -v gcc)
-  export CXX_FOR_BUILD=$(command -v g++)
 

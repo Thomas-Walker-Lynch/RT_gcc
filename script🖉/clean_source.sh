@@ -1,6 +1,6 @@
 #!/bin/bash
-# removes only the tarball expansions from upstream
-# git repos are removed with `clean_upstream`
+# removes project tarball expansions from source/
+# git repos are part of `upstream` so are not removed
 
 set -euo pipefail
 
@@ -26,4 +26,4 @@ while [ $i -lt ${#UPSTREAM_TARBALL_LIST[@]} ]; do
   i=$((i + 1))
 done
 
-echo "✅ clean_source_expansion.sh"
+echo "✅ clean_source.sh"
