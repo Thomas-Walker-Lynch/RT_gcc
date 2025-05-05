@@ -21,8 +21,8 @@ cd "$SCRIPT_DIR"
 ./build_linux_requisites.sh
 ./build_linux.sh
 
-./prepare_glibc_sources.sh
-./build_glibc_headers.sh
+#./build_glibc_bootstrap_requisites.sh
+./build_glibc_bootstrap.sh
 
 ./build_gcc_stage1_requisites.sh
 ./build_gcc_stage1.sh
