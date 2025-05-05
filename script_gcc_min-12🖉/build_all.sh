@@ -4,7 +4,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 SCRIPT_DIR="$PWD"
 
-echo "loading environment"
 source "$SCRIPT_DIR/environment.sh"
 
 cd "$SCRIPT_DIR"

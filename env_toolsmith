@@ -6,6 +6,6 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 export ROOT=$(dirname "$script_afp")
-export SCRIPT_DIR="$ROOT"/script🖉
+export SCRIPT_DIR="$ROOT"/script_gcc_min-12🖉
 
 cd "$SCRIPT_DIR"
