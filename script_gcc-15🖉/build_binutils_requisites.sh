@@ -17,8 +17,8 @@ found_requisite_list=()
   )
 
   for tool in "${required_tools[@]}"; do
-    location=$(command -v "$tool")  # Fixed this part to use $tool instead of "tool"
-    if [ $? -eq 0 ]; then  # Check if the command was successful
+    location=$(command -v "$tool") 
+    if [ $? -eq 0 ]; then 
       found_requisite_list+=("$location")
     else
       missing_requisite_list+=("$tool")

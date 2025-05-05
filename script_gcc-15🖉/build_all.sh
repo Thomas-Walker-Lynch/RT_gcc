@@ -9,11 +9,10 @@ source "$SCRIPT_DIR/environment.sh"
 
 cd "$SCRIPT_DIR"
 
-./clean_build.sh
-./setup_project.sh 
-
-./download_sources.sh
-./extract_from_tar.sh
+./project_setup.sh 
+./project_download.sh
+./project_extract.sh
+./project_requisites
 
 ./build_binutils_requisites.sh
 ./build_binutils.sh

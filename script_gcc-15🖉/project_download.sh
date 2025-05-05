@@ -1,7 +1,7 @@
 #!/bin/bash
-# This script can be run multiple times to fetch what was missed on prior invocations
+# This script can be run multiple times to download what was missed on prior invocations
 # If there is a corrupt tarball, delete it and run this again
-# Sometimes the connection test fails, then the data downloads anyway
+# Sometimes a connection test will fails, then the downloads runs anyway
 
 set -uo pipefail  # no `-e`, we want to continue on error
 
@@ -26,16 +26,17 @@ check_internet_connection() {
 
 check_server_reachability() {
   local url=$1
-  
+  echo "checking is reachable: $url "
+
   # Attempt to get the HTTP response code without following redirects
   http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$url")
   
   # If the HTTP code is between 200 and 299, consider it reachable
   if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-    echo "✅ Server $url is reachable (HTTP $http_code)"
+    echo "✅ Server reachable (HTTP $http_code): $url "
   else
     # If not 2xx, print the status code for transparency
-    echo "⚠️ Server $url returned HTTP $http_code (proceeding with download anyway)"
+    echo "⚠️ Server HTTP $http_code not 2xx, will try anyway:  $url"
   fi
 }
 
@@ -50,46 +51,46 @@ download_file() {
 
   echo "Downloading $file from $url..."
   if (cd "$UPSTREAM" && curl -LO "$url"); then
-    if [[ -f "$UPSTREAM/$file" ]]; then
-      echo "✅ Successfully downloaded $file"
+    if file "$UPSTREAM/$file" | grep -qi 'html'; then
+      echo "❌ Invalid download (HTML, not archive): $file"
+      rm -f "$UPSTREAM/$file"
+      return 1
+    elif [[ -f "$UPSTREAM/$file" ]]; then
+      echo "✅ Successfully downloaded: $file"
       return 0
+    # Validate it's not an HTML error page
     else
-      echo "❌ $file did not appear after download"
+      echo "❌ Did not appear after download: $file "
       return 1
     fi
   else
-    echo "❌ Failed to download $file"
+    echo "❌ Failed to download: $file"
     return 1
   fi
 }
 
-fetch_tarballs() {
-  echo "Starting to download tarballs..."
-
+download_tarballs() {
   i=0
   while [ $i -lt ${#UPSTREAM_TARBALL_LIST[@]} ]; do
     tarball="${UPSTREAM_TARBALL_LIST[$i]}"
     url="${UPSTREAM_TARBALL_LIST[$((i+1))]}"
+    i=$((i + 3))
 
     if check_file_exists "$tarball"; then
-      echo "⚡ $tarball already exists, skipping download"
-      i=$((i + 3))
+      echo "⚡ already exists, skipping download: $tarball "
       continue
     fi
 
     check_server_reachability "$url"
 
     if ! download_file "$tarball" "$url"; then
-      echo "⚠️ Skipping $tarball due to previous error"
+      echo "⚠️ Skipping due to previous error: $tarball "
     fi
 
-    i=$((i + 3))
   done
 }
 
-fetch_git_repos() {
-  echo "Starting to download Git repositories..."
-
+download_git_repos() {
   i=0
   while [ $i -lt ${#UPSTREAM_GIT_REPO_LIST[@]} ]; do
     repo="${UPSTREAM_GIT_REPO_LIST[$i]}"
@@ -97,7 +98,7 @@ fetch_git_repos() {
     dir="${UPSTREAM_GIT_REPO_LIST[$((i+2))]}"
 
     if [[ -d "$dir/.git" ]]; then
-      echo "⚡ $dir already exists, skipping git clone"
+      echo "⚡ Already exists, skipping git clone: $dir "
       i=$((i + 3))
       continue
     fi
@@ -111,15 +112,20 @@ fetch_git_repos() {
   done
 }
 
-# Show what will be downloaded
-echo "Preparing to download the following sources:"
-echo "  - Linux kernel: $LINUX_TARBALL"
-echo "  - Binutils: $BINUTILS_TARBALL"
-echo "  - Glibc: $GLIBC_TARBALL"
-echo "  - GCC source: $GCC_REPO (branch $GCC_BRANCH)"
+# do the downloads
 
 check_internet_connection
-fetch_tarballs
-fetch_git_repos
 
-echo "✅ download_expand_source.sh completed"
+echo "Downloading tarballs:"
+for ((i=0; i<${#UPSTREAM_TARBALL_LIST[@]}; i+=3)); do
+  echo "  - ${UPSTREAM_TARBALL_LIST[i]}"
+done
+download_tarballs
+
+echo "Cloning Git repositories:"
+for ((i=0; i<${#UPSTREAM_GIT_REPO_LIST[@]}; i+=3)); do
+  echo "  - ${UPSTREAM_GIT_REPO_LIST[i]} (branch ${UPSTREAM_GIT_REPO_LIST[i+1]})"
+done
+download_git_repos
+
+echo "project_download.sh completed"

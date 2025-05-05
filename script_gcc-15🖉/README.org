@@ -1,4 +1,9 @@
 
+This was a bear to get running, and I have given up on it for now.
+
+It dies early in the chain at the making of glibc and the crt.o
+etc. files.
+
 # Scripts for building standalone gcc
 
 The scripts here will build a standalone gcc along with version compatible tools.

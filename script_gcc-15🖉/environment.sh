@@ -28,6 +28,13 @@ cd $SCRIPT_DIR
   export GCC_VER=15.1.0
   export GLIBC_VER=2.39
 
+  # Library versions: required minimums or recommended tested versions
+  export GMP_VER=6.3.0      # Compatible with GCC 15, latest stable from GMP site
+  export MPFR_VER=4.2.1      # Latest stable, tested with GCC 15
+  export MPC_VER=1.3.1       # Works with GCC 15, matches default in-tree
+  export ISL_VER=0.26        # Matches upstream GCC infrastructure repo
+  export ZSTD_VER=1.5.5      # Stable release, supported by GCC for LTO compression
+
 #--------------------------------------------------------------------------------
 # project structure
 
@@ -60,11 +67,22 @@ cd $SCRIPT_DIR
   export BINUTILS_SRC="$SRC/binutils-$BINUTILS_VER"
   export GCC_SRC="$SRC/gcc-$GCC_VER"
   export GLIBC_SRC="$SRC/glibc-$GLIBC_VER"
+  export GMP_SRC="$SRC/gmp-$GMP_VER"
+  export MPFR_SRC="$SRC/mpfr-$MPFR_VER"
+  export MPC_SRC="$SRC/mpc-$MPC_VER"
+  export ISL_SRC="$SRC/isl-$ISL_VER"
+  export ZSTD_SRC="$SRC/zstd-$ZSTD_VER"
+
   SOURCE_DIR_LIST=(
     "$LINUX_SRC"
     "$BINUTILS_SRC"
     "$GCC_SRC"
     "$GLIBC_SRC"
+    "$GMP_SRC"
+    "$MPFR_SRC"
+    "$MPC_SRC"
+    "$ISL_SRC"
+    "$ZSTD_SRC"
   )
 
   # Build directories
@@ -84,40 +102,59 @@ cd $SCRIPT_DIR
 
   # see top of this file for the _VER variables
 
-  # Tarballs
-  export LINUX_TARBALL="linux-${LINUX_VER}.tar.xz"
-  export BINUTILS_TARBALL="binutils-${BINUTILS_VER}.tar.gz"
-  export GLIBC_TARBALL="glibc-${GLIBC_VER}.tar.gz"
-
   # Tarball Download Info (Name, URL, Destination Directory)
   export UPSTREAM_TARBALL_LIST=(
-    "$LINUX_TARBALL"
-    "https://cdn.kernel.org/pub/linux/kernel/v6.x/$LINUX_TARBALL"
+    "linux-${LINUX_VER}.tar.xz"
+    "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${LINUX_VER}.tar.xz"
     "$UPSTREAM/linux-$LINUX_VER"
-    
-    "$BINUTILS_TARBALL"
-    "https://ftp.gnu.org/gnu/binutils/$BINUTILS_TARBALL"
+
+    "binutils-${BINUTILS_VER}.tar.xz"
+    "https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VER}.tar.xz"
     "$UPSTREAM/binutils-$BINUTILS_VER"
-    
-    "$GLIBC_TARBALL"
-    "https://ftp.gnu.org/gnu/libc/$GLIBC_TARBALL"
+
+     # using repo
+     # "gcc-${GCC_VER}.tar.xz"
+     # "https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz"
+     # "$UPSTREAM/gcc-$GCC_VER"
+
+    "glibc-${GLIBC_VER}.tar.xz"
+    "https://ftp.gnu.org/gnu/libc/glibc-${GLIBC_VER}.tar.xz"
     "$UPSTREAM/glibc-$GLIBC_VER"
+
+    "gmp-${GMP_VER}.tar.xz"
+    "https://ftp.gnu.org/gnu/gmp/gmp-${GMP_VER}.tar.xz"
+    "$UPSTREAM/gmp-$GMP_VER"
+
+    "mpfr-${MPFR_VER}.tar.xz"
+    "https://www.mpfr.org/mpfr-${MPFR_VER}/mpfr-${MPFR_VER}.tar.xz"
+    "$UPSTREAM/mpfr-$MPFR_VER"
+
+    "mpc-${MPC_VER}.tar.gz"
+    "https://ftp.gnu.org/gnu/mpc/mpc-${MPC_VER}.tar.gz"
+    "$UPSTREAM/mpc-$MPC_VER"
+
+    "isl-${ISL_VER}.tar.bz2"
+#    "https://gcc.gnu.org/pub/gcc/infrastructure/isl-${ISL_VER}.tar.bz2"
+     "https://libisl.sourceforge.io/isl-0.26.tar.bz2"
+#    "https://github.com/Meinersbur/isl/archive/refs/tags/isl-0.26.tar.gz"
+    "$UPSTREAM/isl-$ISL_VER"
+
+    "zstd-${ZSTD_VER}.tar.zst"
+    "https://github.com/facebook/zstd/releases/download/v${ZSTD_VER}/zstd-${ZSTD_VER}.tar.zst"
+    "$UPSTREAM/zstd-$ZSTD_VER"
   )
 
-  # Git Repositories (URL, Branch, Destination Directory)
-  export GCC_REPO="git://gcc.gnu.org/git/gcc.git"
-  export GCC_BRANCH="releases/gcc-15"
 
-  # Git Repo Info: Repository URL, Branch, Destination Directory
-  # Repo's expand on load so go directly into $SRC
+  # Git Repo Info
+  # Each entry is triple:  Repository URL, Branch, Destination Directory
+  # Repos clone directly into $SRC
   export UPSTREAM_GIT_REPO_LIST=(
 
-    "$GCC_REPO"
-    "$GCC_BRANCH"
+    "git://gcc.gnu.org/git/gcc.git"
+    "releases/gcc-15"
     "$SRC/gcc-$GCC_VER"
 
      #currently there is no second repo   
   )
- 
 
 
