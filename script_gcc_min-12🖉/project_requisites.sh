@@ -112,6 +112,15 @@ for mod in "${optional_py_modules[@]}"; do
   fi
 done
 
+glibc_version=$(ldd --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+glibc_path=$(ldd /bin/ls | grep 'libc.so.6' | awk '{print $3}')
+if [[ -n "$glibc_version" && -f "$glibc_path" ]]; then
+  found_requisite_list+=("library: glibc @ $glibc_path (version $glibc_version)")
+else
+  missing_requisite_list+=("library: glibc")
+fi
+
+
 echo
 echo "Summary:"
 echo "--------"
@@ -141,7 +150,7 @@ else
       echo "  - $item"
     done
     echo
-    echo "These may be expected if you are building them from source:"
+    echo "The following are expected to be missing if you are building them from source:"
     echo "  - mpc"
     echo "  - isl"
     echo "  - zstd"

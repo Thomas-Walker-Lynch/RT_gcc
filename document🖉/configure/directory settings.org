@@ -1,0 +1,92 @@
+#+TITLE: GCC Configure Directory Settings
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+See `terms - machine roles` and `compiler deployment scenarios` for context on build environments.
+
+* --prefix
+
+This path determines where the GCC build will put the build products: binaries, libraries, and include files. Though other configuration options can override these locations.
+
+In other words, it specifies the directory to hold the build products. Put yet in other words, it specifies the current build target directory.
+
+Default: /usr/local
+
+Examples:
+
+- If you want to install GCC into a custom toolchain directory called `/opt/gcc-12` use
+  `--prefix=/opt/gcc-12`
+
+- Thomas is building a standalone toolchain into `$TOOLCHAIN`, so he sets:
+  `--prefix=$TOOLCHAIN`
+  to ensure all artifacts are installed in that controlled location.
+
+* --exec-prefix
+
+Sets the prefix for machine-specific files (binaries and libraries). If omitted, defaults to the value of `--prefix`.
+
+Rarely needed unless separating machine-independent files (docs, configs) from machine-dependent binaries.
+
+Default: Same as `--prefix`
+
+Example:
+
+- To split architecture-specific files into `/opt/gcc-12/x86_64`, you could use:
+  `--prefix=/opt/gcc-12`  
+  `--exec-prefix=/opt/gcc-12/x86_64`
+
+* --with-sysroot
+
+Sets the logical root directory for headers and libraries used by the target system. This is especially useful for cross-compilation.
+
+- Default: (none)
+- Usage:
+  During cross-compilation or isolated builds, you use this to point to a directory that mimics the target system's root.
+
+- Example: Thomas builds in a clean sysroot at `$SYSROOT`, so he passes:
+  `--with-sysroot=$SYSROOT`
+
+* --with-local-prefix
+
+Specifies the location of *site-specific* include files (those not part of the system standard, but still available locally).
+
+- Default: /usr/local
+- Usage:
+  If you are building GCC for a sandboxed system and do not want GCC to search `/usr/local/include`, this option helps isolate your build.
+
+- Example: Thomas is building a minimal toolchain and wants no accidental includes from host system, so he disables it:
+  `--with-local-prefix=/dev/null`
+
+  *Note:* If you are building a cross-compiler or isolating your build, you almost certainly want to set this — otherwise `/usr/local/include` from the build machine could sneak into your target build.
+
+* --with-native-system-header-dir
+
+Sets the default location that GCC searches for system headers during compilation.
+
+- Default: /usr/include
+- Usage:
+  Combine with `--with-sysroot` to define where GCC will look for headers inside the sysroot.
+
+- Example: Inside a musl-based sysroot at `$SYSROOT`, headers live in `$SYSROOT/usr/include`. Thomas sets:
+  `--with-sysroot=$SYSROOT`  
+  `--with-native-system-header-dir=/usr/include`
+
+  This ensures GCC internally treats the headers as if they were in `/usr/include` — *relative to* `$SYSROOT`.
+
+* Summary Table
+
+#+BEGIN_LATEX
+\begin{tabular}{|l|l|p{6cm}|}
+\hline
+\textbf{Option} & \textbf{Default} & \textbf{Purpose} \\
+\hline
+\texttt{--prefix} & /usr/local & Installation root for GCC binaries, libs, etc. \\
+\texttt{--exec-prefix} & Same as --prefix & Overrides install path for arch-specific files. \\
+\texttt{--with-sysroot} & (none) & Logical root of target system (headers, libs). \\
+\texttt{--with-local-prefix} & /usr/local & Where GCC looks for local includes (non-system). \\
+\texttt{--with-native-system-header-dir} & /usr/include & Directory (inside sysroot) with system headers. \\
+\hline
+\end{tabular}
+#+END_LATEX

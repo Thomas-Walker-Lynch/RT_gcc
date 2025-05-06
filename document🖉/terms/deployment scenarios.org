@@ -1,0 +1,49 @@
+#+TITLE: Compiler Deployment Scenarios
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+See `terms - machine roles'  for the definitions of 'build', 'host', and 'target' machines.
+
+* Native Compilation: Build = Host = Target.
+
+In a native compilation, all three roles — the machine that builds GCC (`build`), the machine on which the resulting compiler will run (`host`), and the machine for which that compiler will generate code (`target`) — are the same.
+
+- Example 1: Alice is running Debian on an x86_64 machine. She builds GCC from source directly on that system. The compiler runs on her Debian machine and compiles code for that same environment.  
+  In terms of machine categories:  
+  `build = host = target = x86_64-pc-linux-gnu`
+
+- Example 2: A system administrator compiles GCC inside a Fedora x86_64 container. The resulting compiler is used within that same container to build programs for Fedora x86_64.  
+  In terms of machine categories:  
+  `build = host = target = x86_64-redhat-linux`
+
+* Cross Compilation: Build = Host ≠ Target.
+
+In a cross compilation, the compiler is built and will run on one type of system (`build = host`), but is used to produce binaries for a different kind of system (`target`).
+
+- Example 1: Bob is using an x86_64 Ubuntu machine to build a GCC toolchain that runs on Ubuntu but outputs code for a Raspberry Pi (ARM).  
+  In terms of machine categories:  
+  `build = host = x86_64-pc-linux-gnu`,  
+  `target = arm-linux-gnueabihf`
+
+- Example 2: A developer builds a MIPS cross-compiler on an x86_64 workstation. The resulting GCC is used on that workstation to compile code for an embedded MIPS device.  
+  In terms of machine categories:  
+  `build = host = x86_64-pc-linux-gnu`,  
+  `target = mipsel-linux-uclibc`
+
+* Canadian Cross: Build ≠ Host ≠ Target.
+
+A Canadian Cross involves three distinct machines. GCC is built on one system (`build`), but the resulting compiler is meant to run on a different system (`host`), and it will generate binaries for yet another system (`target`).
+
+- Example 1: A toolchain is built on an x86_64 Linux desktop (`build`). It produces a GCC that runs on PowerPC AIX (`host`) and generates code for ARM embedded systems (`target`).  
+  In terms of machine categories:  
+  `build = x86_64-pc-linux-gnu`  
+  `host  = powerpc-ibm-aix`  
+  `target = arm-none-eabi`
+
+- Example 2: Charlie uses his Linux laptop to build a Windows-native GCC cross-compiler (`host = Windows`). This Windows-hosted compiler will produce binaries for Android ARM (`target`).  
+  In terms of machine categories:  
+  `build = x86_64-pc-linux-gnu`  
+  `host  = x86_64-w64-mingw32`  
+  `target = arm-linux-androideabi`

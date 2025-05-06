@@ -1,0 +1,84 @@
+#+TITLE: RT_gcc Build Branding and Documentation URLs
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+This document outlines the recommended settings for GCC distributor metadata options when building the standalone ~RT_gcc~ compiler toolchain. These settings help clarify origin, version, and support paths for any distributed binaries based on this toolchain.
+
+* Purpose
+GCC offers metadata fields to help identify binary builds, especially when they include custom patches or are not compiled from the official FSF release tree. Since RT_gcc introduces features like `#assign` and modular build scripts, we recommend setting these fields clearly.
+
+* Recommended Configuration
+
+** --with-pkgversion
+:PROPERTIES:
+:default: GCC
+:controls: Label shown by `gcc --version` to identify the binary origin
+:END:
+
+** Recommended setting
+#+BEGIN_EXAMPLE
+--with-pkgversion="RT_gcc standalone by Reasoning Technology"
+#+END_EXAMPLE
+
+This distinguishes RT_gcc binaries from FSF-provided GCC builds.
+
+You can optionally append a build number or commit hash:
+#+BEGIN_EXAMPLE
+--with-pkgversion="RT_gcc standalone r1 (commit 9f3b123)"
+#+END_EXAMPLE
+
+** --with-bugurl
+:PROPERTIES:
+:default: https://gcc.gnu.org/bugs/
+:controls: Where users are told to report bugs
+:END:
+
+** Recommended setting
+#+BEGIN_EXAMPLE
+--with-bugurl="https://github.com/Thomas-Walker-Lynch/RT_gcc/issues"
+#+END_EXAMPLE
+
+Use the GitHub Issues tracker unless you prefer an email or internal system.
+
+** --with-documentation-root-url
+:PROPERTIES:
+:default: https://gcc.gnu.org/onlinedocs/
+:controls: Where documentation links in error messages point
+:END:
+
+** Recommended setting
+#+BEGIN_EXAMPLE
+--with-documentation-root-url="https://gcc.gnu.org/onlinedocs/"
+#+END_EXAMPLE
+
+You may leave this as-is unless you plan to host modified docs yourself.
+
+** --with-changes-root-url
+:PROPERTIES:
+:default: https://gcc.gnu.org/
+:controls: Where version-specific release notes are linked
+:END:
+
+** Recommended setting
+#+BEGIN_EXAMPLE
+--with-changes-root-url="https://gcc.gnu.org/"
+#+END_EXAMPLE
+
+Alternatively, if you maintain a changelog of your patched builds:
+#+BEGIN_EXAMPLE
+--with-changes-root-url="https://github.com/Thomas-Walker-Lynch/RT_gcc/releases/"
+#+END_EXAMPLE
+
+* Summary Table
+#+LATEX_HEADER: \usepackage{booktabs}
+#+ATTR_LATEX: :environment tabular :align lll
+#+NAME: Distributor Option Summary
+| Option                        | Purpose                             | Suggested Setting                                                  |
+|------------------------------+-------------------------------------+--------------------------------------------------------------------|
+| --with-pkgversion            | Identify GCC build source           | RT_gcc standalone by Reasoning Technology                          |
+| --with-bugurl               | Where users report issues           | https://github.com/Thomas-Walker-Lynch/RT_gcc/issues               |
+| --with-documentation-root-url | Docs base for online help          | https://gcc.gnu.org/onlinedocs/                                    |
+| --with-changes-root-url     | Changelog root                      | https://github.com/Thomas-Walker-Lynch/RT_gcc/releases/           |
+

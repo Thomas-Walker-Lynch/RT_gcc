@@ -1,0 +1,78 @@
+#+TITLE: Toolchain Dependency Layers
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+* Purpose
+
+This document outlines the dependencies involved in building a standalone GCC toolchain. It compares two approaches:
+
+1. Using system-provided tools and headers to build GCC
+2. Building a fully self-consistent standalone toolchain
+
+Understanding the bootstrap sequence is critical for modifying or reproducing GCC builds, especially when building in isolation.
+
+* The Story: Bootstrap Spiral
+
+So this programmer — he wanted to add a new directive to GCC.
+
+So he downloaded the GCC sources with the intent to make a modified, standalone copy.
+
+But to compile GCC, he needed standard C library headers — which meant downloading glibc.
+
+But to compile glibc, he needed a working C compiler. So he would first need a minimal GCC — stage 1.
+
+But to build that stage 1 GCC, he needed glibc headers.
+
+So he compiled the glibc headers first.
+
+Then he compiled stage 1 GCC.
+
+Then he compiled the full glibc.
+
+Then he compiled the full GCC.
+
+Ah, but to compile the glibc headers, he first needed the Linux kernel headers...
+
+There was an old lady who swallowed a fly. I don’t know why she...
+
+* Approach 1: System-Assisted Bootstrap
+
+This method uses the host system’s tools and headers to provide bootstrap support. It is simpler and faster, but not fully isolated.
+
+** Dependencies:
+
+- System-provided:
+  - C compiler (e.g. GCC)
+  - libc (headers and shared objects)
+  - binutils
+  - Linux kernel headers
+
+- Build Steps:
+  1. Build binutils using system GCC
+  2. Build GCC using system libc and headers
+
+** Characteristics:
+- Fast
+- Relies on host environment
+- Not self-contained
+
+** Use Case:
+- Building a local variant of GCC that will be used on the same system
+- Development where purity or relocatability isn’t required
+
+* Approach 2: Fully Self-Consistent Toolchain
+
+This method builds every component of the toolchain in a clean directory, using only upstream sources. It isolates the build from host interference.
+
+** Dependencies:
+
+- Linux kernel headers (must be provided up front)
+- Binutils source
+- Glibc source
+- GCC source
+
+** Build Sequence:
+
+1. Install Linux kernel headers → needed to build glib

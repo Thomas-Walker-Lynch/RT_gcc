@@ -1,0 +1,76 @@
+#+TITLE: RT_gcc Terminology Glossary
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+A glossary of commonly used terms and variables in the GNU toolchain documentation,
+with emphasis on their meaning in the context of building GCC.
+
+* General Terms
+
+** GCC
+The GNU Compiler Collection — a suite of compilers for C, C++, Fortran, and other languages.
+
+** GNU
+GNU's Not Unix — a free software project started by the Free Software Foundation (FSF).
+
+** FSF
+The Free Software Foundation — original sponsor and maintainer of the GNU project and GCC.
+
+** toolchain
+A set of programs used to build software, usually including a compiler (GCC), linker (ld), assembler (as), and C library (glibc or musl).
+
+** native build
+A build where `build = host = target`. You are compiling GCC for the same system you're building it on.
+
+** cross-compiler
+A compiler built on one machine (the build system), to run on another (the host), and generate code for yet another (the target).
+
+** bootstrap
+The process of building GCC in multiple stages:
+1. Build a minimal compiler (stage1)
+2. Use it to build a full compiler (stage2)
+3. Use the result to rebuild itself (stage3) and verify output is stable
+
+
+* Build Triplets
+
+** build
+The system on which the *build process itself* runs.
+
+** host
+The system where the resulting GCC binary will *run*.
+
+** target
+The system for which GCC will *generate code*.  
+Only meaningful when building a cross-compiler.
+
+* Build Options
+
+** --enable-<feature>
+Turns on an optional feature at configure time.
+
+** --disable-<feature>
+Explicitly disables an optional feature.
+
+** --with-<feature>=value
+Sets a feature or path used by the build system (e.g., `--with-sysroot`, `--with-pkgversion`).
+
+** --with-pkgversion
+Custom string shown in `gcc --version`, useful to identify modified builds.
+
+** --with-bugurl
+Sets the URL shown in `gcc --version` for reporting bugs.
+
+** --enable-languages
+Limits the frontends to be built (e.g., C, C++, Fortran).  
+Useful to speed up bootstrap or reduce size.
+
+** --disable-multilib
+Disables building 32-bit and 64-bit variants together (relevant on x86_64 systems).
+
+* Components
+
+** binutils
+A set of binary tools including `as`

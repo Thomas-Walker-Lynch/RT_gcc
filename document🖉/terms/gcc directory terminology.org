@@ -1,0 +1,68 @@
+
+#+TITLE: GCC Directory Terminology
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+* build directory (objdir)
+
+The directory where a build process takes place.  
+
+For GCC this must be distinct from the source directory (srcdir). 
+
+* current build
+
+Refers to the specific build being executed right now, as opposed to previously installed or referenced builds.
+
+Example:
+- "The current build will output to `$BUILD_DIR/gcc`"
+- "Avoid mixing headers from an old build with the current build"
+
+* current build target directory
+
+The destination directory into which the current build places its build products.
+
+This term combines the concepts of the `current build` and `target directory`, emphasizing that the output location is for the present compilation effort.
+
+Examples:
+- If `make install DESTDIR=$SYSROOT`, then `$SYSROOT` is the current build target directory.
+- For an isolated toolchain, `$TOOLCHAIN` might be the current build target directory
+
+* installation directory
+
+Any directory from which components are *intended to be used from*, whether built locally or installed from packages. A final resting place for binaries, scripts, libraries, headers, or anything else that gets 'used' as part of everyday work.
+
+In the GCC documents, an 'installation directory'  is not limited to directories that the current build will put things into. In fact, sometimes it is used to refer to a directory the build will get things from.
+
+Examples include:
+- System-wide locations like `/usr/bin`
+- Custom toolchain roots like `$TOOLCHAIN/bin`
+
+* local-prefix
+
+Path where GCC searches for locally installed headers (like `/usr/local/include`).  
+This is not a build target directory, rather it is used for lookup during compilation.
+
+* prefix
+The root path where GCC will install itself:
+- Binaries to `$prefix/bin`
+- Headers to `$prefix/include`
+- Libraries to `$prefix/lib`
+
+* source directory (srcdir)
+The directory where the original GCC (or binutils/glibc) source code resides.
+Often deleted or archived after the build completes.
+* sysroot
+A directory that acts as a "fake root" (`/`) for headers and libraries.  
+Used in controlled builds or cross-compilation to isolate from the host system.
+* target directory
+The directory where *build outputs* are placed — typically the result of `make install` or a direct build artifact.
+
+This may be the same as `prefix`, or it may be a temporary staging area. It refers specifically to the destination for *this build’s* outputs, not a system path in general.
+
+Examples:
+- `$TOOLCHAIN/bin` if that’s where you are installing
+- `DESTDIR=/tmp/stage make install` — `/tmp/stage` is the target directory
+
+

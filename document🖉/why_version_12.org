@@ -1,0 +1,38 @@
+#+TITLE: The Fictional Story of The GCC 15 Install
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+#+OPTIONS: toc:nil num:nil
+#+LANGUAGE: en
+
+Once upon a time, there was a programmer who wanted to add a new directive to the C preprocessor, cpp. cpp was a simple tool. It expanded macros and did basic text substitutions, nothing more. The programmer thought, “I’ll just modify cpp. That’s easy enough.
+
+But he could not find cpp. Rather cpp is part of gcc, part and parcel. Well he thought,
+gcc is a mature tool, and after making mods to cpp, it will build merely by calling make.
+
+So he downloaded the latest gcc, gcc-16, but then discovered, there were no release branches. "It won't be stable." He thought, then backed off to gcc-15.
+
+Then upon attempting to build gcc-15 as baseline before making any mods, he discovered that the system glibc was not version compatible for the build.
+
+Ok, simple matter, he thought, “I’ll download glibc too. It’s just part of the process.”
+
+But then attempting to compiling glibc, he encountered something he hadn’t expected. To compile glibc, he needed a version compatible C compiler, and the system compiler is not up to.  "Ah I remember," he said as recalled, that gcc can be built in two stages, with the
+first stage not requiring glibc, but being sufficient to compile glic.
+
+So he set to work on the stage 1 GCC, but as he got deeper, he realized that the stage 1 GCC required certain C runtime files — specifically crt1.o, crti.o, and crtn.o. “Ah, no problem,” he said. “I’ll just generate those.”
+
+The programmer found that the files could be generated using the glibc make file, so he attempted that, but alas, headers were needed, and a version compatible binutils was needed.
+
+So the programmer downloaded the linux headers and the binutils sources.  Binutils could be built with the system gcc, so all was good.
+
+“Now, I’ve got the CRT files. Let’s move on,” he thought. With the CRT files in hand, he turned to compiling the glibc headers. This was simple enough, and once those were built, he could proceed with the stage 1 GCC.
+
+After completing the first stage of GCC, he thought, “Great. Now I can move on to the full glibc. It’s just the next step.”
+
+And so, he used his stage 1 GCC to compile the full glibc. It wasn’t a complex process, just a bit more time-consuming. But with glibc now fully built, the programmer could finally finish the GCC build. The full toolchain was nearly ready.
+
+With everything falling into place, the programmer turned to compile the full GCC. And just like that, the toolchain was built. He linked everything together, a self-contained, fully functional GCC, ready for use.
+
+But you ask me why this story is fiction?  Well the answer is simple, because glibc make did not create the crt files.  Perhaps it doesn't do that.  IDK.
+
+So this is the story of how we ended up at version 12, which does compile with system tools.
+

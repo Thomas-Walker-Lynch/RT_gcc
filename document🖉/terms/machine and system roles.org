@@ -1,0 +1,57 @@
+#+TITLE: Terms - Machine and System Roles
+#+AUTHOR: Thomas Walker Lynch
+#+DATE: 2025-05-06
+
+* Machine vs System
+
+In this context, "machine" and "system" are often used interchangeably, but they can carry slightly different connotations depending on the context in which they are used.
+
+** Machine
+
+  - Machine typically refers to the physical hardware or the machine itself — a particular physical computing device, such as a laptop, server, or embedded device.
+
+  - When we talk about the target machine, we are usually referring to the physical or virtual hardware on which the final compiled binaries will run.
+
+** System
+
+  - System generally refers to the complete environment in which the software operates. This includes the hardware but also extends to the operating system (OS), libraries, and other software that makes up the environment in which the machine operates.
+
+  - The target system refers not just to the physical hardware but to the entire environment where the program will execute, including the OS, libraries, etc.
+
+** Target Machine vs Target System
+
+  - The target machine is indeed a specific instance of hardware (e.g., a Raspberry Pi or an ARM-based system).
+
+  - The target system can also refer to the environment in which that machine operates, which includes not just the hardware (machine) but also the operating system and the software environment required to run the compiled binaries.
+
+In many contexts, the terms are used interchangeably, but there’s a subtle distinction:
+
+  - Target Machine emphasizes the hardware aspect.
+  - Target System emphasizes the complete environment, including hardware, OS, and libraries.
+
+** Examples
+
+  - Target Machine: "The target machine is an ARM Cortex-M processor." Here, the focus is on the physical hardware.
+  - Target System: "The target system is an ARM Cortex-M processor running a specific version of an embedded OS." Here, the focus is on both the hardware and the environment (OS, libraries, etc.).
+
+
+* System Roles
+
+* 'build'
+The system on which the GCC compiler **is being built**.
+
+- John downloads the GCC source code and compiles it on his x86_64 Debian laptop. The GCC compiler **is built on** this laptop, so the build system is Debian on x86_64.
+- Sarah uses her macOS machine to build a GCC compiler intended for use on a different system. Even though she won’t run it locally, the compiler **was constructed on macOS**, making macOS the build system.
+
+* 'host'
+The system where the **compiled GCC binary will run** — where you’ll actually invoke `gcc`.
+
+- Alice builds a GCC binary on Ubuntu, but installs and runs it on an Alpine Linux container. The host is Alpine Linux because that’s where the compiler binary will execute.
+- A CI pipeline builds GCC on an x86 Linux node but deploys the resulting `gcc` executable to a FreeBSD system, where users will compile programs. FreeBSD is the host.
+
+* 'target'
+The system for which the **compiled GCC binary will generate code** — where the output binaries are meant to run.
+
+- Mark compiles a version of GCC that runs on x86 Linux (host), but it produces binaries for ARM Cortex-M chips. The target is ARM Cortex-M.
+- A developer builds a GCC compiler on x86 that will run on macOS, and it generates code for RISC-V devices. The target is RISC-V — the eventual destination of the compiled programs.
+

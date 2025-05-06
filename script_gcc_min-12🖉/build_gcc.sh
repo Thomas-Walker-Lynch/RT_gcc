@@ -1,31 +1,43 @@
 #!/bin/bash
+# build_gcc.sh – Build GCC 12.2.0 using system libraries and headers
+
 set -euo pipefail
 
-# Load environment
 source "$(dirname "$0")/environment.sh"
 
-echo "🔧 Starting final GCC build..."
+echo "🔧 Starting GCC build..."
 
-mkdir -p "$GCC_BUILD_FINAL"
-pushd "$GCC_BUILD_FINAL"
+mkdir -p "$GCC_BUILD"
+pushd "$GCC_BUILD"
 
 "$GCC_SRC/configure" \
+
+  --with-pkgversion="RT_gcc standalone by Reasoning Technology" \
+  --with-bugurl="https://github.com/Thomas-Walker-Lynch/RT_gcc/issues" \
+  --with-documentation-root-url="https://gcc.gnu.org/onlinedocs/" \
+  --with-changes-root-url="https://github.com/Thomas-Walker-Lynch/RT_gcc/releases/" \
+
+  --host="$HOST" \
   --prefix="$TOOLCHAIN" \
-  --with-sysroot="$SYSROOT" \
-  --with-native-system-header-dir=/usr/include \
-  --target="$TARGET" \
+  --with-local-prefix=/dev/null \
+
+  --build="$HOST" \
+  --target="$HOST" \
+  --with-native-system-header-dir="/usr/include/x86_64-linux-gnu" \
   --enable-languages=c,c++ \
   --enable-threads=posix \
-  --enable-shared \
-  --disable-nls \
   --disable-multilib \
   --disable-bootstrap \
-  --disable-libsanitizer \
-  $CONFIGURE_FLAGS
+  --disable-nls \
+  --with-system-zlib \
+  CPPFLAGS_FOR_TARGET="-isystem /usr/include/x86_64-linux-gnu" \
+  CFLAGS_FOR_TARGET="-I/usr/include/x86_64-linux-gnu" \
+  CXXFLAGS_FOR_TARGET="-I/usr/include/x86_64-linux-gnu"
 
-$MAKE
+$MAKE -j"$MAKE_JOBS"
 $MAKE install
 
 popd
 
-echo "✅ Final GCC installed to $TOOLCHAIN/bin"
+echo "✅ GCC installed to $TOOLCHAIN/bin"
+"$TOOLCHAIN/bin/gcc" --version
