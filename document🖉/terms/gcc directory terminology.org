@@ -57,9 +57,9 @@ Often deleted or archived after the build completes.
 A directory that acts as a "fake root" (`/`) for headers and libraries.  
 Used in controlled builds or cross-compilation to isolate from the host system.
 * target directory
-The directory where *build outputs* are placed — typically the result of `make install` or a direct build artifact.
+The directory where build products are placed — typically the result of `make install`.
 
-This may be the same as `prefix`, or it may be a temporary staging area. It refers specifically to the destination for *this build’s* outputs, not a system path in general.
+This can be the same as `prefix`, or it may be a temporary staging area. It refers specifically to the destination for *this build’s* outputs, not a system path in general.
 
 Examples:
 - `$TOOLCHAIN/bin` if that’s where you are installing

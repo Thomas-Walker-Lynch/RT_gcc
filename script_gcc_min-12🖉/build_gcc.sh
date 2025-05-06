@@ -19,20 +19,8 @@ pushd "$GCC_BUILD"
 
   --host="$HOST" \
   --prefix="$TOOLCHAIN" \
-  --with-local-prefix=/dev/null \
-
-  --build="$HOST" \
-  --target="$HOST" \
-  --with-native-system-header-dir="/usr/include/x86_64-linux-gnu" \
   --enable-languages=c,c++ \
   --enable-threads=posix \
-  --disable-multilib \
-  --disable-bootstrap \
-  --disable-nls \
-  --with-system-zlib \
-  CPPFLAGS_FOR_TARGET="-isystem /usr/include/x86_64-linux-gnu" \
-  CFLAGS_FOR_TARGET="-I/usr/include/x86_64-linux-gnu" \
-  CXXFLAGS_FOR_TARGET="-I/usr/include/x86_64-linux-gnu"
 
 $MAKE -j"$MAKE_JOBS"
 $MAKE install

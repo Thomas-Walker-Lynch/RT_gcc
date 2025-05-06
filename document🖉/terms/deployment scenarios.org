@@ -4,7 +4,7 @@
 #+OPTIONS: toc:nil num:nil
 #+LANGUAGE: en
 
-See `terms - machine roles'  for the definitions of 'build', 'host', and 'target' machines.
+See `terms/machine and system roles' for the definitions of 'build', 'host', and 'target' system/machine.
 
 * Native Compilation: Build = Host = Target.
 

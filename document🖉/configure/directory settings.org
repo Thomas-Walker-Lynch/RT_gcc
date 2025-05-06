@@ -6,11 +6,19 @@
 
 See `terms - machine roles` and `compiler deployment scenarios` for context on build environments.
 
-* --prefix
+The one or more GCC programs used during the build, will by necessity be different from the GCC produced by the build. We call the GCC produced by the build the 'target GCC'. The GCC used to do the build is the `build GCC`.
 
-This path determines where the GCC build will put the build products: binaries, libraries, and include files. Though other configuration options can override these locations.
+We talk about GCC compiling C programs. This is a simplification as target GCC compilers can be made for a number of languages.
 
-In other words, it specifies the directory to hold the build products. Put yet in other words, it specifies the current build target directory.
+* Settings that customize the build process itself
+
+** --prefix $PREFIX
+
+This setting directly affects the build.
+
+Sets the build target directory to $PREFIX. This is where GCC build will write the build products: binaries, libraries, and include files.
+
+The GCC build does not read from this directory. There are other options for specifying where GCC reads libraries and header files.
 
 Default: /usr/local
 
@@ -23,7 +31,9 @@ Examples:
   `--prefix=$TOOLCHAIN`
   to ensure all artifacts are installed in that controlled location.
 
-* --exec-prefix
+For splitting apart the --prefix setting:
+
+*** --exec-prefix
 
 Sets the prefix for machine-specific files (binaries and libraries). If omitted, defaults to the value of `--prefix`.
 
@@ -37,56 +47,110 @@ Example:
   `--prefix=/opt/gcc-12`  
   `--exec-prefix=/opt/gcc-12/x86_64`
 
-* --with-sysroot
+The following standard autoconf options are supported. Normally you should not need to use these options.
 
-Sets the logical root directory for headers and libraries used by the target system. This is especially useful for cross-compilation.
+*** --bindir=dirname
+Specify the installation directory for the executables called by users (such as gcc and g++). The default is exec-prefix/bin.
+
+*** --libdir=dirname
+Specify the installation directory for object code libraries and internal data files of GCC. The default is exec-prefix/lib.
+
+*** --libexecdir=dirname
+Specify the installation directory for internal executables of GCC. The default is exec-prefix/libexec.
+
+*** --with-slibdir=dirname
+Specify the installation directory for the shared libgcc library. The default is libdir.
+
+*** --datarootdir=dirname
+Specify the root of the directory tree for read-only architecture-independent data files referenced by GCC. The default is prefix/share.
+
+*** --infodir=dirname
+Specify the installation directory for documentation in info format. The default is datarootdir/info.
+
+*** --datadir=dirname
+Specify the installation directory for some architecture-independent data files referenced by GCC. The default is datarootdir.
+
+*** --docdir=dirname
+Specify the installation directory for documentation files (other than Info) for GCC. The default is datarootdir/doc.
+
+*** --htmldir=dirname
+Specify the installation directory for HTML documentation files. The default is docdir.
+
+*** --pdfdir=dirname
+Specify the installation directory for PDF documentation files. The default is docdir.
+
+*** --mandir=dirname
+Specify the installation directory for manual pages. The default is datarootdir/man. (Note that the manual pages are only extracts from the full GCC manuals, which are provided in Texinfo format. The manpages are derived by an automatic conversion process from parts of the full manual.)
+
+*** --with-gxx-include-dir=dirname
+Specify the installation directory for G++ header files. The default depends on other configuration options, and differs between cross and native configurations.
+
+*** --with-specs=specs
+Specify additional command line driver SPECS. This can be useful if you need to turn on a non-standard feature by default without modifying the compiler’s source code, for instance --with-specs=%{!fcommon:%{!fno-common:-fno-common}}. See “Spec Files” in the main manual
+
+
+* Settings that affect the behavior of the target compiler
+
+** --with-local-prefix $INCDIR
+
+This setting affects the behavior of the target GCC, but apart from that, does not affect the build.
+
+The target GCC, i.e. the one that configure and make is producing, will presumably be used later by programmers to compile programs. When the target GCC is called upon to compile a C program, that C program might specify one or more include files. 
+
+By default, when the target GCC is invoked and the source file direct for the inclusion of a system header file, the target GCC will first search the directory `/usr/include` for that header file, and if it does not find it, it will then search `/usr/local/include`. 
+
+When `--with-local-prefix $INCDIR` is specified, the target GCC will first search `/usr/include`, as before; however, if it does not find the header file, it will instead search in `$INCDIR/include`.  Thus `/usr/include/local` does not get searched in these first two steps.
+
+This features is intended to support sites that use a different convention than `/usr/local` for the installation of site local header files.
+
+As for any GCC compile, additional include directories to be searched can be specified with the `-I` option given to the target GCC at the time it is invoked. The user can provide arbitrary values after the -I, though the target GCC will require read access to the specified directories.
+
+The document at https://gcc.gnu.org/install/configure.html, describes this option with a potentially confusing first sentence of "Specify the installation directory for local include files." By 'installation directory' they do not mean the target directory where the target GCC is being put by the build process, unless by coincidence. Rather they mean the place that site local header files will be found in the future when the target GCC is running and compiling source code.
+
+The site local directory can be removed from the include file search path by setting `--with-local-prefix` to `/dev/null'.
+
+- **Default**: `/usr/local`
+
+** --with-sysroot $SYSROOT
+
+This setting affects the behavior of the target GCC, but apart from that, does not affect the build.
+
+By default, when the target GCC is later invoked to compile a program, it will search absolute paths for libraries and include files, namely in `/usr/include`, `/usr/lib` and `/usr/local/include` for header and library files to read. This happens downstream when the target GCC is invoked to do work for programmers.
+
+The `--with-sysroot $SYSROOT` option causes the library and include searches to instead be relative to $SYSROOT. It will instead search,  `$SYSROOT/include`,  `$SYSROOT/usr/lib` and `$SYSROOT/usr/local/include` for header and library files to read.
+
+Various other options here can modify the defaults of where the target GCC will search for libraries and include files. When given `--with-sysroot $SYSROOT` those default overrides will also be taken to be relative to `$SYSROOT`.
+
+The target GCC's built-in default include and library paths are adjusted to be relative to $SYSROOT. However, user-supplied -I and -L paths remain absolute unless written as relative paths.
+
+This setting is useful when cross compiling or when building an isolated GCC.
 
 - Default: (none)
 - Usage:
   During cross-compilation or isolated builds, you use this to point to a directory that mimics the target system's root.
-
-- Example: Thomas builds in a clean sysroot at `$SYSROOT`, so he passes:
+- Example: Thomas builds a version of GCC that is not supported by the system, so he installs all requisite run time files to be used by this version of GCC into `$SYSROOT`, so at build time he passes to configure:
   `--with-sysroot=$SYSROOT`
 
-* --with-local-prefix
+** --with-native-system-header-dir
 
-Specifies the location of *site-specific* include files (those not part of the system standard, but still available locally).
+Specifies the directory where the target GCC will look for **native system headers** by default, when it is later invoked to compile programs.
 
-- Default: /usr/local
-- Usage:
-  If you are building GCC for a sandboxed system and do not want GCC to search `/usr/local/include`, this option helps isolate your build.
+The term *native* here refers to the **target system** that the built GCC is intended to compile programs for — whether that system is the same as the host (in a native build) or different (in a cross-compilation scenario). These headers typically come from the target's C library (like glibc or musl), and include standard files such as `<stdio.h>`, `<stdlib.h>`, etc.
 
-- Example: Thomas is building a minimal toolchain and wants no accidental includes from host system, so he disables it:
-  `--with-local-prefix=/dev/null`
+This setting controls where those headers are expected to reside. It is especially useful when building an isolated toolchain or a cross-compiler, where the target's system headers do not follow the default `/usr/include` layout.
 
-  *Note:* If you are building a cross-compiler or isolating your build, you almost certainly want to set this — otherwise `/usr/local/include` from the build machine could sneak into your target build.
+When used in combination with `--with-sysroot`, this path is interpreted relative to the given sysroot. For example, if `--with-native-system-header-dir=/usr/include` and `--with-sysroot=$SYSROOT` are both provided, the target GCC will search for headers in `$SYSROOT/usr/include`.
 
-* --with-native-system-header-dir
+This option overrides the default path implied by `--with-local-prefix`, and affects only the behavior of the resulting target GCC — it does not influence how GCC itself is built.
 
-Sets the default location that GCC searches for system headers during compilation.
+- **Default**: `/usr/include`
 
-- Default: /usr/include
-- Usage:
-  Combine with `--with-sysroot` to define where GCC will look for headers inside the sysroot.
+- **Example**: Inside a musl-based sysroot located at `$SYSROOT`, system headers live in `$SYSROOT/usr/include`. Thomas configures GCC with:
+  #+begin_src bash
+  --with-sysroot=$SYSROOT
+  --with-native-system-header-dir=/usr/include
+  #+end_src
 
-- Example: Inside a musl-based sysroot at `$SYSROOT`, headers live in `$SYSROOT/usr/include`. Thomas sets:
-  `--with-sysroot=$SYSROOT`  
-  `--with-native-system-header-dir=/usr/include`
+  This causes the resulting GCC to treat `/usr/include` as the location of system headers — *relative to* `$SYSROOT`.
 
-  This ensures GCC internally treats the headers as if they were in `/usr/include` — *relative to* `$SYSROOT`.
 
-* Summary Table
-
-#+BEGIN_LATEX
-\begin{tabular}{|l|l|p{6cm}|}
-\hline
-\textbf{Option} & \textbf{Default} & \textbf{Purpose} \\
-\hline
-\texttt{--prefix} & /usr/local & Installation root for GCC binaries, libs, etc. \\
-\texttt{--exec-prefix} & Same as --prefix & Overrides install path for arch-specific files. \\
-\texttt{--with-sysroot} & (none) & Logical root of target system (headers, libs). \\
-\texttt{--with-local-prefix} & /usr/local & Where GCC looks for local includes (non-system). \\
-\texttt{--with-native-system-header-dir} & /usr/include & Directory (inside sysroot) with system headers. \\
-\hline
-\end{tabular}
-#+END_LATEX
