@@ -1,0 +1,147 @@
+#+TITLE: cpp_reader: Preprocessor State and Interface Guide
+#+AUTHOR: Caelestis Index
+#+FILETAGS: cpp, GCC internals, preprocessor, architecture
+
+* Overview
+The =cpp_reader= struct in GCC's =libcpp= encapsulates the complete state of a single C preprocessor session. It governs token input, macro expansion, directive parsing, include stack management, and source map resolution. It is the central state object passed through nearly all parts of the C preprocessor.
+
+* 1. State Data
+
+** 1.1 Buffer and Lexing State
+- ~buffer~, ~overlaid_buffer~: Input buffer stack for file and macro streams.
+- ~cur_token~, ~cur_run~, ~base_run~: Active token buffer and tokenrun tracking.
+- ~keep_tokens~: Whether to preserve old tokens (e.g., for diagnostics).
+- ~a_buff~, ~u_buff~, ~free_buffs~: Temporary memory allocation pools.
+
+** 1.2 Parsing and Directive State
+- ~state~: General lexer state (includes ~in_directive~ flag).
+- ~state.in_directive~: Boolean flag indicating whether the preprocessor is currently parsing a directive line. If ~true~, token behavior (e.g., whitespace and line continuation) may differ.
+- ~directive~, ~directive_line~: Currently parsed directive and its location.
+- ~directive_result~: Token synthesized by a directive (if any).
+
+** 1.3 Macro Context and Expansion
+- ~context~, ~base_context~: Macro expansion call stack.
+- ~top_most_macro_node~: Current top-level macro under expansion.
+- ~about_to_expand_macro_p~: Indicates if a macro is about to expand.
+- ~macro_buffer~, ~macro_buffer_len~: Buffers for rendering macro string forms.
+
+** 1.4 Include and File Lookup State
+- ~quote_include~, ~bracket_include~, ~no_search_path~: Search paths.
+- ~all_files~, ~main_file~: Linked list of all known input files.
+- ~file_hash~, ~dir_hash~: Hashtables for file path caching.
+- ~nonexistent_file_hash~: Optimizes negative lookup caching.
+- ~seen_once_only~: Tracks ~#pragma once~ semantics.
+
+** 1.5 Character Set Conversion
+- ~narrow_cset_desc~, ~utf8_cset_desc~, ~wide_cset_desc~, etc.: Converters for source to execution character encodings.
+
+** 1.6 Location Mapping and Source Positioning
+- ~line_table~: GCC's =line_maps= structure for virtual location tracking.
+- ~invocation_location~, ~main_loc~, ~forced_token_location~: Positional context for diagnostics, token creation.
+
+** 1.7 Miscellaneous Flags and Utilities
+- ~quote_ignores_source_dir~: Include resolution behavior flag.
+- ~counter~: Value of the ~__COUNTER__~ macro.
+- ~out~: Output buffer for traditional preprocessing mode.
+- ~savedstate~: Used for dependency tracking with precompiled headers.
+- ~comments~: Optional comment capture buffer.
+
+* 2. Core Interface Functions 
+** 2.1 Token Retrieval
+- ~cpp_get_token(pfile)~: Public interface for retrieving the next logical token.
+- ~cpp_peek_token(pfile, N)~: Look ahead without consuming.
+- ~cpp_get_token_1(pfile)~: Internal token fetch used during macro expansion.
+
+** 2.2 Macro Definition and Expansion
+- ~_cpp_new_macro(pfile, cmk_macro, obstack_ptr)~: Allocate and initialize a new macro definition.
+- ~_cpp_mark_macro_used(node)~: Mark a macro as having been used.
+- ~replace_args(...)~: Expand and replace macro arguments (not used during directive handling).
+- ~collect_args(...)~: Collects arguments for a function-like macro invocation.
+- ~collect_single_argument(...)~: Parses one macro argument and handles token accumulation.
+- ~cpp_arguments_ok(...)~: Checks argument count and matching for a macro invocation.
+- ~set_arg_token(...)~: Sets or appends a token in an argument’s expansion list.
+
+** 2.3 Directive Handling Helpers
+- ~_cpp_skip_rest_of_line(pfile)~: Skip trailing tokens after directive arguments.
+- ~lex_macro_node(pfile)~: Specialized lexer for parsing macro names.
+
+** 2.4 File/Include Handling
+- ~cpp_push_include(pfile, filename)~: Add a new include to the stack.
+- ~cpp_find_include_file(...)~: Path search logic.
+
+** 2.5 Location Utilities
+- ~cpp_token_location(token)~: Extracts a =location_t= from a token.
+- ~linemap_add(...)~: Adds a mapping between logical and physical line/column.
+
+** 2.6 Miscellaneous
+- ~cpp_warning_with_line(...)~, ~cpp_error_with_line(...)~: Emit diagnostics with location.
+- ~cpp_lookup(pfile, name, length)~: Interns an identifier and returns a ~cpp_hashnode *~.
+- ~NODE_NAME(node)~: Expands to the null-terminated name of a macro node.
+
+* 3. Usage Examples
+
+** 3.1 Defining a Macro from a Directive
+#+BEGIN_SRC c
+cpp_hashnode *node = lex_macro_node(pfile);
+cpp_macro *macro = _cpp_new_macro(pfile, cmk_macro, _cpp_reserve_room(pfile, 0, sizeof(cpp_macro)));
+macro->count = 1;
+macro->exp.tokens[0] = make_number_token("42");
+node->type = NT_USER_MACRO;
+node->value.macro = macro;
+_cpp_mark_macro_used(node);
+#+END_SRC
+
+** 3.2 Parsing a Directive With Two Arguments
+#+BEGIN_SRC c
+cpp_token *arg1 = cpp_get_token(pfile);
+cpp_token *comma = cpp_get_token(pfile);
+if (comma->type != CPP_COMMA)
+    cpp_error(pfile, CPP_DL_ERROR, "expected ',' after macro name");
+cpp_token *arg2 = cpp_get_token(pfile);
+_cpp_skip_rest_of_line(pfile);
+#+END_SRC
+
+** 3.3 Controlling Directive Context
+#+BEGIN_SRC c
+bool saved = pfile->state.in_directive;
+pfile->state.in_directive = false;
+assign_handler(pfile);
+pfile->state.in_directive = saved;
+#+END_SRC
+
+** 3.4 Tokenization and Location Debugging
+#+BEGIN_SRC c
+const cpp_token *tok = cpp_get_token(pfile);
+location_t loc = tok->src_loc;
+printf("token at line: %d\n", LOCATION_LINE(loc));
+#+END_SRC
+
+* 4. directive.cc extensions to the reader
+- ~lex_macro_node(pfile)~: Returns a ~cpp_hashnode *~ for the next identifier, used for directives like ~#define~ or custom ones like ~#assign~.
+- ~_cpp_skip_rest_of_line(pfile)~: Advances the token stream to the next physical line.
+- ~cpp_error_with_line(...)~, ~cpp_warning_with_line(...)~: Used for directive diagnostics.
+- ~cpp_lookup(pfile, name, length)~: Interns a name as a hashnode symbol.
+- ~cpp_reader->directive_result~: Used to push a synthesized token result into the stream (e.g., for ~#include_next~).
+- ~pfile->state.in_directive~: Must be manually toggled when directive code calls into macro infrastructure.
+* 5. macro.cc extensions to the reader
+
+*** 4.2.1 collect_args(...)
+Accumulates macro arguments for a function-like macro. Reads and segments the input stream into a series of ~macro_arg~ entries, tracking nesting of parentheses and token boundaries.
+
+*** 4.2.2 collect_single_argument(...)
+Parses and collects one macro argument, terminating on a comma or closing paren. Used internally by ~collect_args~, but can be called separately for single-argument macro handling.
+
+*** 4.2.3 replace_args(...)
+Performs full substitution of macro arguments into the macro body. Handles token pasting (~##~), stringification (~#~), and recursive macro expansion.
+
+*** 4.2.4 cpp_arguments_ok(...)
+Checks whether the number of provided arguments matches the macro’s parameter list. Validates ~paramc~ and variadic status.
+
+*** 4.2.5 set_arg_token(...)
+Helper to insert or append a token into a ~macro_arg~. Used when building argument streams in ~collect_single_argument~.
+
+These routines enable fine-grained control over macro behavior and can be selectively reused to simulate macro expansion at directive time (e.g., ~#assign~, ~#bind~, or macro templating extensions).
+* 6. Conclusion
+~cpp_reader~ is the heart of the preprocessor, acting as a unifying context for token streams, macro tables, buffer management, diagnostics, and parser state. Understanding and safely manipulating it is key to extending the preprocessor (e.g., adding new directives like ~#assign~) without destabilizing expansion or include logic.
+
+Use ~in_directive~, ~context~, and ~cur_token~ fields with care, and follow the established patterns in ~directives.cc~ and ~macro.cc~ to ensure consistent behavior across parse and expansion phases.

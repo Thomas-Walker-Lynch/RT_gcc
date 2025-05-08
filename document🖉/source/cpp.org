@@ -1,0 +1,503 @@
+#+TITLE: C Preprocessor Overview
+#+AUTHOR: Thomas Walker Lynch & Caelestis Index
+#+DESCRIPTION: High-level architectural partitioning of cpp (GCC 12.x)
+#+FILETAGS: cpp preprocessor architecture gcc
+#+OPTIONS: toc:nil
+
+* Preprocessing Pipeline (Diagram)
+
+#+BEGIN_SRC text
+                  C Preprocessor (cpp)
+                  =====================
+
++----------------------+
+|     Source Code      |
++----------------------+
+           |
+           v
++----------------------+
+|   Lexical Analysis   |   <- Part of: Lexical Analysis
+|  (tokenize input)    |
++----------------------+
+           |
+           v
++----------------------+
+|   Directive Engine   |   <- Part of: Directive Handling
+| (#define, #if, etc.) |
++----------------------+
+           |
+           v
++----------------------+
+|   Conditional Logic  |   <- Part of: Conditional Compilation
+| (#if/#ifdef/#else)   |
++----------------------+
+           |
+           v
++----------------------+
+|   Macro Expansion    |   <- Part of: Macro Expansion
+|  (object/function)   |
++----------------------+
+           |
+           v
++----------------------+
+|    Callback Hooks    |   <- Part of: Hook and Callback Interface
+|  (cpp_callbacks)     |
++----------------------+
+           |
+           v
++----------------------+
+|    Output Tokens     |   <- Output stream to compiler frontend
+| (to GCC parser)      |
++----------------------+
+#+END_SRC
+
+Each block corresponds to a major processing stage in `cpp`. The functional groups defined earlier align to these blocks as indicated, though some (like state management and diagnostics) operate globally across the pipeline.
+
+
+
+* Major Functional Partitions of the C Preprocessor (cpp)
+
+This section outlines the primary architectural components of the C preprocessor as implemented in GCC 12.x. These functional partitions help frame how cpp processes input and how its internal modules interact.
+
+** 1. Lexical Analysis
+- Tokenizes input into =cpp_token= streams.
+- Decodes:
+  - UTF-8 characters
+  - Trigraphs (e.g., =??=)
+  - Digraphs (e.g., =<: = for =[=)
+- Central structure: =cpp_lexer=
+- Produces tokens for macro expansion and conditional evaluation.
+** 2. Directive Handling
+- Processes all =#= directives, including:
+  - =#define=, =#undef=, =#include=, =#line=, =#error=, =#pragma=
+  - Extended directives like =#assign=, =#call= if supported.
+- Managed via =directive_table= and dispatch functions like =do_define=, =do_include=, etc.
+
+** 3. Conditional Compilation
+- Handles constructs like:
+  - =#if=, =#ifdef=, =#ifndef=, =#elif=, =#else=, =#endif=
+- Used to include or exclude code based on macro definitions and constant expressions.
+- Driven by the =if_stack= in =cpp_reader=.
+- Central to controlling variant builds, platform-specific code, or staged compilation.
+** 4. File Inclusion and Search Paths
+- Resolves =#include= and maintains include history.
+- Handles:
+  - System vs user includes (<...> vs "...").
+  - Include path resolution via =cpp_search_path=.
+  - File change tracking via =file_stack=.
+** 5. Macro Expansion
+- Handles object-like and function-like macros:
+  - =#define PI 3.14=
+  - =#define SQR(x) ((x)*(x))=
+- Manages:
+  - Argument collection and expansion
+  - Token-pasting (=##=) and stringification (=#=)
+- Involves =macro_table=, =collect_args=, and =expand_macro()=
+
+** 6. Diagnostics and Error Recovery
+- Reports syntax errors, macro misuse, directive misuse.
+- Uses:
+  - =cpp_error=, =cpp_warning=, =cpp_notice=
+  - Tracks macro nesting, input location, and file state for context.
+
+** 7. Hook and Callback Interface
+- Interface: =cpp_callbacks=
+- Allows frontend or plugin to observe:
+  - Macro definitions
+  - File changes
+  - Token output stream
+- Enables debugging tools, IDEs, or language servers to integrate preprocessor awareness.
+
+** 8. State Management and Scoping
+- Maintains global and file-level preprocessor state.
+- Tracks:
+  - Nested conditional state via =if_stack=
+  - Macro table lifetimes and shadowing
+  - Include guards and =#pragma once= heuristics
+
+
+* cpplib.h -- Application Interface Overview
+
+This section documents the **interface** and **in-memory model** of the C preprocessor (`libcpp`) from GCC 12.2.0.
+It covers core data structures (tokens, macros, readers) and the primary functions for working with them.
+
+** Key Data Structures
+
+*** Token & Token Metadata
+- `enum cpp_ttype` :: All possible token types (operators, names, literals, etc.)
+- `struct cpp_token` :: Represents a token in the stream (with union-based payload)
+- `enum cpp_token_fld_kind` :: Discriminates the active field in `cpp_token.val`
+- `struct cpp_string` :: Raw string representation with length and pointer
+
+*** Macros & Identifiers
+- `struct cpp_macro` :: Describes macro kind, parameter list, and token expansion
+- `enum cpp_macro_kind` :: ISO-style, traditional-style, and assertion macros
+- `struct cpp_identifier` :: Canonical and original spellings of a name
+- `struct cpp_macro_arg` :: Argument number and spelling for macro arguments
+
+*** Symbol Table
+- `struct cpp_hashnode` :: Hash table node for identifiers/macros
+- `enum node_type` :: Distinguishes macro types (arg/user/builtin)
+- `union _cpp_hashnode_value` :: Payload (macro, arg index, etc.)
+- `enum cpp_builtin_type` :: Reserved built-ins like `__LINE__`, `__FILE__`, `_Pragma`
+
+*** Reader & Configuration
+- `struct cpp_reader` :: Forward-declared. Central structure for preprocessing.
+- `struct cpp_options` :: Stores all language mode flags, warning flags, and feature toggles.
+- `struct cpp_callbacks` :: Client hook interface for diagnostic, macro, and file events.
+- `struct cpp_dir` :: Represents an `#include` search directory.
+
+*** Numerics
+- `struct cpp_num` :: Two-part 64-bit integer (high, low), overflow flags
+- `cpp_classify_number` :: Categorizes radix/type (e.g., `0x`, `u`, `LL`)
+- Defines :: `CPP_N_*` classify bits (INTEGER, FLOATING, WIDTH, RADIX, SUFFIX)
+
+*** Charset Handling
+- `typedef cppchar_t` :: 32-bit safe character representation
+- `struct cpp_decoded_char` :: Result of UTF-8 decoding step
+- `struct cpp_char_column_policy` :: Visual column handling for diagnostics
+- `class cpp_display_width_computation` :: Converts UTF-8 sequence to visual width
+
+*** Comment Tracking
+- `struct cpp_comment`, `cpp_comment_table` :: Captures all parsed comments (if enabled)
+
+** Core Functions
+
+*** Lifecycle & Reader Setup
+- `cpp_create_reader(enum c_lang, ...)` :: Allocates and initializes `cpp_reader`
+- `cpp_finish`, `cpp_destroy` :: Finalize and free the reader
+- `cpp_post_options` :: Commit option changes after parsing flags
+
+*** Preprocessing Input
+- `cpp_read_main_file` :: Begin reading and preprocessing a source file
+- `cpp_get_token()` :: Fetch next token from stream
+- `cpp_peek_token()` :: Peek ahead without consuming
+- `cpp_backup_tokens()` :: Push tokens back for re-parsing
+- `cpp_retrofit_as_include()` :: Treat main file as if included
+
+*** Macro System
+- `cpp_define()`, `cpp_define_unused()`, `cpp_define_lazily()` :: Define macros
+- `cpp_macro_definition()` :: Dump macro body as string
+- `cpp_compare_macros()` :: Deep compare two macros
+- `cpp_undef()`, `cpp_undef_all()` :: Remove macro(s)
+- `cpp_set_deferred_macro()`, `cpp_get_deferred_macro()` :: Lazy macro substitution
+
+*** Symbol Lookup
+- `cpp_lookup()` :: Lookup or create an identifier hashnode
+- `cpp_forall_identifiers()` :: Iterate over all identifiers
+
+*** String & Char Evaluation
+- `cpp_interpret_charconst()` :: Parse a character constant (e.g. `'a'`)
+- `cpp_interpret_string()` :: Parse string literal(s) into `cpp_string`
+- `cpp_interpret_integer()` :: Parse numeric token into `cpp_num`
+
+*** Diagnostics
+- `cpp_error()`, `cpp_warning()`, `cpp_pedwarning()` :: General messages
+- `cpp_error_at()` :: Message with source location (rich_location optional)
+- `cpp_errno()` / `cpp_errno_filename()` :: Errors based on `errno`
+- `cpp_warning_with_line()` :: Fallback location-based warnings
+- `cpp_get_callbacks()` / `cpp_set_callbacks()` :: Manage diagnostic hooks
+
+*** Extension Hooks & Pragma
+- `cpp_register_pragma()` :: Register custom `#pragma` handler
+- `cpp_get_callbacks()` :: Access to client-supplied hook table
+- `cpp_define_formatted()` :: Macro with `printf`-style input
+- `cpp_directive_only_process()` :: Run directive-only logic on a token stream
+
+*** Includes & File Management
+- `cpp_set_include_chains()` :: Set system and user include paths
+- `cpp_push_buffer()` :: Manually push a buffer for parsing
+- `cpp_included()`, `cpp_included_before()` :: Has this file been included?
+- `cpp_get_converted_source()` :: Read a file in input charset, return decoded buffer
+
+** Token Types (cpp_ttype)
+
+A full enumeration of all tokens in the preprocessor:
+- Operators: `CPP_PLUS`, `CPP_MINUS`, `CPP_EQ_EQ`, etc.
+- Punctuation: `CPP_OPEN_PAREN`, `CPP_HASH`, `CPP_SEMICOLON`
+- Literals: `CPP_STRING`, `CPP_WCHAR`, `CPP_NUMBER`
+- Special: `CPP_MACRO_ARG`, `CPP_PRAGMA`, `CPP_EOF`
+
+Each token has:
+- Type (`enum cpp_ttype`)
+- Flags (`PREV_WHITE`, `DIGRAPH`, `NO_EXPAND`, etc.)
+- Source location
+- Union payload (e.g., string, macro arg, hashnode)
+
+** Interface Concepts Beyond Code
+*** Unicode Handling
+- Input is normalized per `cpp_normalize_level`
+- UTF-8 is expanded into 32-bit code points (`cppchar_t`)
+- Display width of characters is estimated for diagnostics
+- Bidi (bidirectional) controls are optionally scanned/warned
+
+*** Client Extension Hooks
+- Most preprocessing operations (macro use, `#include`, comments, errors) are callback-hooked
+- Used by GCC frontend to track macro use, implement diagnostics, and guide `#pragma` processing
+
+*** Dependency Generation
+- `cpp_finish()` accepts an output stream for dependency info
+- Options control whether main file is included, phony targets are added, etc.
+
+** Summary
+
+`cpplib.h` serves as both API contract and internal representation guide.
+- It offers a high-fidelity view of source tokens for later compiler stages.
+- The entire macro system, character encoding, and diagnostic lifecycle are managed through this interface.
+
+
+
+
+* Callback Hooks (cpp_callbacks)
+
+The `cpp_callbacks` struct in `cpplib.h` allows external consumers (e.g., GCC frontend, IDE integrations, or plugins) to receive notifications during preprocessing. Each function pointer in this struct represents a hookable event.
+
+** Overview
+
+Hooks are triggered at specific stages:
+- After macro definition or undefinition
+- Before and after file inclusion
+- When tokens are emitted
+- Upon encountering diagnostics
+- During comment scanning (if enabled)
+- On encountering special directives (e.g., `#pragma`)
+
+** Hook Structure
+
+#+BEGIN_SRC c
+struct cpp_callbacks {
+  void (*define)(cpp_reader *, source_location, const cpp_hashnode *);
+  void (*undef)(cpp_reader *, source_location, const cpp_hashnode *);
+  void (*include)(cpp_reader *, const char *filename, int angle_brackets);
+  void (*file_change)(cpp_reader *, const struct line_map *);
+  void (*line_change)(cpp_reader *, source_location, int to_file, int to_line);
+  void (*ident)(cpp_reader *, const cpp_string *);
+  void (*invalid_directive)(cpp_reader *);
+  void (*def_pragma)(cpp_reader *, const cpp_token *);
+  void (*cb_comment)(cpp_reader *, const cpp_token *);
+};
+#+END_SRC
+
+Each callback receives either a pointer to the `cpp_reader`, the affected token or structure, and optional contextual data.
+
+---
+
+** `define`
+
+*** Trigger
+- Fired immediately after a macro is defined with `#define`.
+
+*** Parameters
+- `cpp_reader *pfile`: global preprocessor state (read-write).
+- `source_location loc`: location of the `#define`.
+- `const cpp_hashnode *node`: the macro name and metadata (read-only in this context).
+
+*** Semantics
+- The `cpp_hashnode` holds the macro's name and a pointer to its `cpp_macro` definition.
+- Modifying the macro at this point is possible but discouraged. Use `cpp_undef()` + `cpp_define()` instead if redefinition is needed.
+
+*** Uses
+- GCC uses this to update dependency tracking and debug tables.
+- Tools may track macro definitions, emit logs, or enforce naming policies.
+
+---
+
+** `undef`
+
+*** Trigger
+- Fired after `#undef` removes a macro.
+
+*** Parameters
+- Same as `define`.
+
+*** Semantics
+- The node is marked `undefined`, but the symbol remains in the hash table.
+- No mutation should occur—only inspection or logging.
+
+*** Uses
+- Enables reversal tracking or macro scoping analysis.
+
+---
+
+** `include`
+
+*** Trigger
+- Fired just before a file is opened via `#include`.
+
+*** Parameters
+- `cpp_reader *pfile`
+- `const char *filename`: string from the include directive (not normalized).
+- `int angle_brackets`: nonzero for `<...>`, zero for `"..."`.
+
+*** Semantics
+- Purely informational; does not affect include search or suppression.
+- The filename is unverified and not guaranteed to exist.
+
+*** Uses
+- IDEs and build tools use this to build include graphs.
+- LSPs use it to track file references and symbol origins.
+
+---
+
+** `file_change`
+
+*** Trigger
+- Called when the active input file changes (entry or exit of `#include`).
+
+*** Parameters
+- `cpp_reader *pfile`
+- `const struct line_map *map`: describes the current file's location and context.
+
+*** Semantics
+- `line_map` gives full access to file/line/column mapping.
+- This structure is read-only; mutating it will corrupt diagnostics and tokenization.
+
+*** Uses
+- Debug info (DWARF line tables), logging, stack-based include tracking.
+
+---
+
+** `line_change`
+
+*** Trigger
+- Fired on `#line` directives or line-mapping transitions.
+
+*** Parameters
+- `cpp_reader *pfile`
+- `source_location loc`: location in input stream.
+- `int to_file`: non-zero if a new file name is being used.
+- `int to_line`: new logical line number.
+
+*** Semantics
+- Use this to remap locations or re-synchronize overlays.
+- These values are inputs to the line map; do not write back.
+
+*** Uses
+- Used in DWARF debug info to support accurate line-based breakpoints.
+
+---
+
+** `ident`
+
+*** Trigger
+- Called when a `#ident` directive is parsed.
+
+*** Parameters
+- `cpp_reader *pfile`
+- `const cpp_string *text`: payload of the identifier message.
+
+*** Semantics
+- Informational only. Common in legacy systems or codegen traces.
+
+*** Uses
+- Collect module identity, versioning hints, or logmarks.
+
+---
+
+** `invalid_directive`
+
+*** Trigger
+- Fired when an unrecognized or malformed directive is encountered.
+
+*** Parameters
+- `cpp_reader *pfile`
+
+*** Semantics
+- Hook has no extra context; use `cpp_get_token()` to recover.
+- Hook may trigger fallback behavior or custom directive logic.
+
+*** Uses
+- Used in `-fpreprocessed` mode to suppress diagnostics.
+- External tools can use this to extend the directive set.
+
+---
+
+** `def_pragma`
+
+*** Trigger
+- Fired when a `#pragma` directive is parsed.
+
+*** Parameters
+- `cpp_reader *pfile`
+- `const cpp_token *pragma`: token stream beginning with `CPP_PRAGMA`.
+
+*** Semantics
+- Read-only access to token stream.
+- Mutation possible via `cpp_push_buffer()` to inject expanded tokens.
+
+*** Uses
+- GCC plugins hook this to implement custom `#pragma` behavior.
+- Can trigger front-end features (like `#pragma GCC diagnostic`).
+
+---
+
+** `cb_comment`
+
+*** Trigger
+- Optional. Enabled if comment tracking is requested.
+
+*** Parameters
+- `cpp_reader *pfile`
+- `const cpp_token *comment`: holds text of comment.
+
+*** Semantics
+- Only line/block comment content is captured, not semantics.
+- Read-only token; do not mutate token payload.
+
+*** Uses
+- Used by source-to-source translators and formatters.
+- Some static analyzers inspect comments for hints or disables.
+
+---
+
+** Summary
+
+The `cpp_callbacks` interface enables observational and limited transformational interaction with the preprocessor pipeline.
+
+- Most parameters are read-only or shallow copies.
+- For transformations, prefer using `cpp_define()`, `cpp_push_buffer()`, or `cpp_backup_tokens()` externally.
+- Internal structures like `cpp_reader`, `cpp_token`, and `cpp_macro` should not be mutated unless explicitly permitted.
+
+
+
+* Plugin-Like Integration in libcpp
+
+Unlike the main GCC compiler, which supports a formal plugin system (`gcc-plugin.h`), `libcpp` (the C preprocessor library) does *not* support plugins in the dynamic or runtime-loaded sense. There is no system for loading shared libraries, registering handlers via symbols, or extending preprocessor behavior through runtime modules.
+
+** Static Hook Interface via cpp_callbacks
+
+Instead, `libcpp` exposes a *statically defined interface* (`struct cpp_callbacks`) for embedding applications to receive notifications of preprocessor events. These include:
+
+- Macro definitions and undefinitions
+- Source file entry/exit
+- Comment and pragma parsing
+- Token emission and buffer transitions
+
+An embedding client (such as GCC's C/C++ frontend, or a third-party tool using libcpp) may assign function pointers directly into this struct during reader setup.
+
+#+BEGIN_SRC c
+cpp_reader *r = cpp_create_reader(...);
+cpp_callbacks *cb = cpp_get_callbacks(r);
+cb->macro_defined = my_macro_handler;
+cb->file_change = my_file_tracker;
+#+END_SRC
+
+This pattern is analogous to a *plugin interface*, but all logic is statically linked at compile time.
+
+** Mutability and Access Scope
+
+The callback interface is primarily **observational**—that is, hooks are expected to inspect events, not mutate the `cpp_reader` state directly. However, advanced users can, with care, reach into the data structures passed to them (e.g., `cpp_macro`, `cpp_hashnode`) and affect behavior, though this is neither documented nor officially supported.
+
+In summary:
+
+| Feature                  | GCC Frontend Plugin | libcpp Callback Interface |
+|--------------------------+---------------------+----------------------------|
+| Dynamically loadable     | Yes                 | No                         |
+| Runtime extension API    | Yes (`gcc-plugin.h`) | No                         |
+| Assign custom handlers   | Yes                 | Yes (via `cpp_callbacks`)  |
+| Mutate core structures   | With care           | With care (not endorsed)   |
+| Stability across versions| Best-effort         | Internal API, may break    |
+
+** Recommendation
+
+Use `cpp_callbacks` as a read-only interface to monitor preprocessing behavior. If deeper mutation or instrumentation is required, consider modifying or forking `libcpp` itself. There is currently no officially supported way to extend it at runtime.

@@ -1,0 +1,83 @@
+#+TITLE: macro.cc - Documentation Reference
+#+AUTHOR: Thomas Walker Lynch & Caelestis Index
+#+DESCRIPTION: High-level architectural partitioning of cpp (GCC 12.x)
+#+FILETAGS: cpp preprocessor architecture gcc
+#+OPTIONS: toc:nil
+
+* Overview
+This file implements the core logic for macro parsing, macro definition, expansion, and deferred/lazy evaluation within the C preprocessor (CPP) subsystem in GCC's `libcpp`. It complements the infrastructure declared in `libcpp.h` and utilizes various helpers from supporting headers.
+
+* Included Headers and Their Purpose
+- `config.h`: Compiler configuration macros.
+- `system.h`: GCC-wide portability and utility macros.
+- `intl.h`: Localization support.
+- `cpplib.h`: Core interface for the C preprocessor.
+- `internal.h`: Internal-only structures and definitions for the preprocessor.
+- `macros.h`: Macro parsing and storage structures.
+- `trad.h`: Traditional mode logic.
+- `mkdeps.h`: Dependency output handling.
+- `diagnostic-core.h`: Diagnostic emission interfaces.
+- `cpp-id-data.h`: Identifier information, e.g. for argument naming.
+
+* Major Data Structures Used
+
+- `cpp_reader` (from `cpplib.h`): The global preprocessor context.
+- `cpp_hashnode` (from `cpplib.h`): Represents identifiers, including macro definitions.
+- `cpp_macro` (from `macros.h`): Stores a single macro definition, either traditional or ISO.
+- `macro_arg` (from `macros.h`): Represents a single argument to a function-like macro.
+- `macro_context` (internal): Used for tracking extended macro expansion location information.
+- `_cpp_buff` (from `internal.h`): Temporary token or string storage buffer.
+- `cpp_token` (from `cpplib.h`): Represents a preprocessor token.
+- `cpp_string` (from `cpplib.h`): String-like wrapper for character sequences.
+
+* Functional Groups (Grouped per libcpp.h Theme)
+
+*** Token Context Management
+- `_cpp_push_token_context`: Pushes a direct token sequence as context.
+- `push_ptoken_context`: Pushes indirect token sequence.
+- `push_extended_tokens_context`: Pushes context with virtual locations.
+- `_cpp_pop_context`: Pops current macro or token context.
+
+*** Argument Expansion and Memory
+- `expand_arg`: Expands a macro argument by recursively evaluating tokens.
+- `alloc_expanded_arg_mem`: Allocates buffer space for an argument.
+- `ensure_expanded_arg_room`: Doubles expansion buffer when needed.
+- `set_arg_token` (external): Inserts expanded tokens into an argument.
+
+*** Macro Definition and Redefinition
+- `_cpp_create_definition`: Top-level interface to create and store macro definition.
+- `create_iso_definition`: Parses macro arguments and expansion tokens.
+- `_cpp_save_parameter`: Saves a named parameter for a function-like macro.
+- `_cpp_unsave_parameters`: Restores hashnodes after failed macro parse.
+- `warn_of_redefinition`: Determines if a redefinition should trigger a warning.
+- `cpp_compare_macros`: Compares two macros for semantic equality.
+
+*** Macro Instantiation and Lazy Expansion
+- `get_deferred_or_lazy_macro`: Retrieves or forces realization of a deferred or lazy macro.
+- `cpp_get_deferred_macro`: Resolves a deferred macro.
+- `cpp_define_lazily`: Marks a macro for delayed definition.
+- `_cpp_notify_macro_use`: Central notification hook that tracks macro use.
+
+*** Macro Definition Representation
+- `cpp_macro_definition`: Renders a macro definition as a string.
+- `cpp_macro_definition(pfile, node, macro)`: Core form with macro pointer.
+
+*** Lexing Helpers and Traditional Compatibility
+- `lex_expansion_token`: Lexes one token in a macro body.
+- `check_trad_stringification`: Warns if argument appears stringified in traditional C.
+- `_cpp_new_macro`: Allocates and initializes a `cpp_macro`.
+
+* Integration with Other Subsystems
+- Works closely with: `lex.c`, `directives.cc`, and `internal.c`.
+- Interfaces with `linemap` for virtual location computation.
+- Supports both ISO and traditional C macro handling.
+
+* Notes
+- Token pasting (`##`) is carefully constrained per ISO rules.
+- Parameter and macro use is tracked for diagnostics and DWARF output.
+- Extra tokens such as padding and stringification markers carry encoded flags.
+
+* TODO
+- Document edge cases and non-ISO behaviors (e.g., bare ellipsis).
+- Link to relevant `libcpp.h` macro flags and diagnostic utilities.
+- Cross-reference context expansion rules with `cpp_get_token_1`.

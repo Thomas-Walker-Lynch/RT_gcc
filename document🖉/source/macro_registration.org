@@ -1,0 +1,150 @@
+#+TITLE: Macro Symbol Registration in GCC 12 libcpp
+#+AUTHOR: Caelestis Index
+#+DESCRIPTION: Full lifecycle of defining and registering a macro in GCC's C preprocessor
+#+OPTIONS: toc:nil
+#+FILETAGS: gcc libcpp macro cpp_hashnode
+
+* Overview
+This document explains the full lifecycle for defining a macro in GCC 12.x's =libcpp= preprocessor. It traces the required steps from token parsing through symbol table registration, highlighting where and how macro definitions become visible to the preprocessor engine.
+
+* 1. Obtaining the Macro Name’s Hash Node
+
+In =libcpp=, all identifiers — including macro names — are interned in a symbol table as =cpp_hashnode= entries. When the lexer emits a =CPP_NAME= token, it automatically fills:
+
+#+BEGIN_SRC c
+token->val.node.node  // type: cpp_hashnode *
+#+END_SRC
+
+If the macro name comes from parsed input (e.g. `#assign` or `#define`), this node is already in the symbol table — no need to call =cpp_lookup= again.
+
+If you're defining a macro from a raw string (not a parsed token), you *would* use:
+
+#+BEGIN_SRC c
+cpp_lookup(pfile ,name ,len);
+#+END_SRC
+
+Note: =cpp_lookup= both interns new identifiers and retrieves existing ones.
+
+* 2. Creating and Populating a cpp_macro Object
+
+GCC uses a =cpp_macro= struct to hold the macro’s definition: number of parameters, replacement tokens, flags, etc.
+
+Allocation is done with:
+
+#+BEGIN_SRC c
+cpp_macro *macro = _cpp_new_macro(
+  pfile,
+  cmk_macro,
+  _cpp_reserve_room(pfile ,0 ,sizeof(cpp_macro))
+);
+#+END_SRC
+
+After that, populate its fields:
+
+#+BEGIN_SRC c
+macro->fun_like = 0;
+macro->paramc   = 0;
+macro->variadic = 0;
+macro->count    = 1;
+macro->used     = 1;
+
+cpp_token *tok = &macro->exp.tokens[0];
+tok->type         = CPP_NUMBER;
+tok->val.str.text = (const unsigned char *) "42";
+tok->val.str.len  = 2;
+tok->flags        = 0;
+#+END_SRC
+
+Note: These macros are obstack-allocated; you don't free them manually.
+
+* 3. Handling Redefinitions (Optional, but Expected)
+
+If the symbol already has a macro:
+
+#+BEGIN_SRC c
+if( cpp_macro_p(node) )
+  warn_of_redefinition(pfile ,node ,macro);
+#+END_SRC
+
+GCC allows redefinition only if the new macro is *identical*. If not, it issues a pedantic warning and overwrites the old definition. 
+
+To remove the previous macro:
+
+#+BEGIN_SRC c
+_cpp_free_definition(node);
+#+END_SRC
+
+This clears the macro without deallocating it (obstack).
+
+* 4. Installing the Macro in the Symbol Table
+
+The macro is made active by assigning it to the symbol table:
+
+#+BEGIN_SRC c
+node->type        = NT_USER_MACRO;
+node->value.macro = macro;
+#+END_SRC
+
+This effectively *registers* the macro for expansion.
+
+There is no separate "symbol table insertion" step — the hash node was already in the table.
+
+GCC may also set flags:
+
+- =NODE_WARN= → warn if redefining built-in
+- =NODE_CONDITIONAL= → cleared when explicitly defined
+
+* 5. Finalization Steps
+
+Some final steps after macro insertion:
+
+- Mark it used (optional):
+
+  #+BEGIN_SRC c
+  _cpp_mark_macro_used(node);
+  #+END_SRC
+
+- Emit a diagnostic:
+
+  #+BEGIN_SRC c
+  cpp_warning(pfile ,CPP_W_NONE ,"Assigned macro %s as 42" ,NODE_NAME(node));
+  #+END_SRC
+
+- Clear the =NODE_USED= flag to reset unused-macro warnings:
+
+  #+BEGIN_SRC c
+  node->flags &= ~NODE_USED;
+  #+END_SRC
+
+* Summary of Required Steps
+
+Here is the complete, valid sequence to register a macro manually:
+
+#+BEGIN_SRC c
+cpp_token *name_token = assign_name_argument(pfile);
+cpp_hashnode *node = name_token->val.node.node;
+
+cpp_macro *macro = _cpp_new_macro(...);  // allocate and populate
+
+// fill token replacement list...
+macro->count = 1;
+macro->exp.tokens[0] = ...;
+
+node->type        = NT_USER_MACRO;
+node->value.macro = macro;
+_cpp_mark_macro_used(node);
+#+END_SRC
+
+That is sufficient to define and register a macro. =NODE_NAME(node)= is useful for diagnostics, but not required for registration.
+
+* Notes
+
+- If you already have a =cpp_token= from parsing, the hash node is *already interned*.
+- Macros must be registered by setting =node->type= and =node->value.macro=.
+- Redefinitions are allowed only if semantically identical unless explicitly undefined.
+- No extra insertion or lookup step is needed unless building from raw text.
+
+* References
+- =directives.cc= → =do_define= and redefinition checks
+- =macro.cc= → =create_iso_definition= and macro assembly
+- =cpplib.h= → =cpp_hashnode=, =cpp_macro=, enum flags

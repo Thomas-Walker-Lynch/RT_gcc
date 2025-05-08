@@ -1,0 +1,227 @@
+#+TITLE: internal.h - Documentation Reference (Emacs Org Format)
+#+AUTHOR: Thomas Walker Lynch & Caelestis Index
+#+DESCRIPTION: Reference breakdown of types, macros, and helper declarations in GCC's libcpp/internal.h
+#+FILETAGS: cpp preprocessor gcc headers internal
+#+OPTIONS: toc:nil
+
+* Overview
+`internal.h` contains declarations for data structures, constants, and utility macros central to GCC's internal C preprocessor logic. It defines memory buffers, macro contexts, lexer state tracking, token kinds, character classes, and preprocessor infrastructure such as file buffers and include tracking.
+
+* Included Headers
+- `symtab.h`: Symbol table definitions used internally.
+- `cpplib.h`: Public CPP interfaces for tokens and readers.
+- `<iconv.h>`: (conditionally) iconv conversion API.
+
+* Core Data Structures
+** `_cpp_buff`
+A generic buffer with pointer markers. Used throughout macro processing and string/token accumulation.
+
+** `cpp_context`
+Represents the current token expansion context. May hold ISO macro token runs or traditional literal input. Tracks virtual locations if macro tracking is enabled.
+
+** `macro_context`
+Holds virtual locations and associated macro node. Used to support `-ftrack-macro-expansion`.
+
+** `cpp_reader`
+Global object managing state for a preprocessing run, including lexer state, file buffers, context stack, macro table, callbacks, charset converters, and diagnostics.
+
+** `cpp_buffer`
+Represents the input buffer of a file or command. Tracks physical and logical line positions, associated file, character set conversion, and line notes.
+
+** `lexer_state`
+Bitfield flags tracking parsing state, expansion behavior, and preprocessor conditionals.
+
+** `tokenrun`
+Represents a sequence of `cpp_token`s. Token runs are chained and form a circular buffer.
+
+** `spec_nodes`
+Holds special pre-defined nodes like `defined`, `true`, `__VA_ARGS__`, etc. Used by conditional expressions and macro substitution.
+
+** `def_pragma_macro`
+Stores push/pop state for macros affected by `#pragma push_macro` and `#pragma pop_macro`.
+
+* cpp_reader Structure
+The `cpp_reader` structure is the central object representing the full state of a preprocessor session in GCC's `libcpp`. It is passed to nearly every function across the subsystem and serves as the orchestration hub for lexing, macro expansion, buffer management, file inclusion, diagnostics, encoding conversion, and callback integration.
+
+** Purpose
+`cpp_reader` encapsulates:
+- The lexical stream and its position.
+- The active and historical context stack.
+- Preprocessor directives and include file tracking.
+- Memory and token buffer management.
+- Charset encoding conversions.
+- Diagnostics and frontend callbacks.
+
+This makes it the definitive state carrier for a preprocessor run.
+
+** Usage in the Preprocessor
+
+The `cpp_reader` structure is instantiated once at the beginning of a preprocessing session via a function like `cpp_create_reader`. It is then initialized with options, encoding settings, and source input before being passed into most libcpp functions. It acts as the persistent environment for all operations and carries forward lexical position, macro state, memory buffers, and file context.
+
+Typical usage involves:
+
+1. **Initialization**:
+   - Create with `cpp_create_reader`.
+   - Configure options via `cpp_get_options`.
+   - Setup include paths and callbacks.
+   - Load source with `cpp_read_main_file`.
+
+2. **Tokenization Loop**:
+   - Repeatedly call `cpp_get_token(pfile)` to read tokens.
+   - Tokens are drawn from buffers, macro expansions, or virtual sources.
+   - `pfile->context` may be manipulated during macro expansions.
+
+3. **Directive and Macro Handling**:
+   - Functions like `_cpp_handle_directive`, `_cpp_create_definition`, or `_cpp_push_token_context` all mutate or inspect `pfile` to reflect state changes during preprocessing.
+
+4. **Finalization**:
+   - Clean up with `cpp_finish`, `cpp_destroy`, or related resource freeing logic.
+
+**Example** (simplified and partial):
+```c
+cpp_reader *pfile = cpp_create_reader(CLK_GNUC89, NULL, linemap);
+cpp_get_options(pfile)->lang = CLK_GNUC89;
+cpp_get_callbacks(pfile)->diagnostic = my_diagnostic_callback;
+cpp_read_main_file(pfile, "myheader.h");
+
+const cpp_token *tok;
+while ((tok = cpp_get_token(pfile))->type != CPP_EOF) {
+  // Process token
+}
+
+cpp_finish(pfile);
+
+
+** Member-by-Member Overview
+
+- `cpp_buffer *buffer` :: Current input buffer, holding the text being preprocessed.
+- `cpp_buffer *overlaid_buffer` :: A temporary buffer overlayed for special cases (e.g. `#include` insertions).
+- `struct lexer_state state` :: Tracks current directive state (e.g., inside `#define`), comment retention, and conditional skipping.
+- `class line_maps *line_table` :: Manages source line and file mapping for diagnostics and `__LINE__`/`__FILE__`.
+- `location_t directive_line` :: Source location of the last encountered directive.
+- `_cpp_buff *a_buff` :: Aligned buffer for allocations requiring native alignment (e.g., tokens).
+- `_cpp_buff *u_buff` :: Unaligned buffer for simpler memory allocations.
+- `_cpp_buff *free_buffs` :: Chain of reusable `_cpp_buff` structures.
+- `cpp_context base_context` :: The base (top-level) token context.
+- `cpp_context *context` :: Pointer to the current context on the expansion stack.
+- `const struct directive *directive` :: Active directive, if in one.
+- `cpp_token directive_result` :: The token result of directive evaluation.
+- `location_t invocation_location` :: Location of a macro's invocation, used for expansion diagnostics.
+- `cpp_hashnode *top_most_macro_node` :: Node of the macro currently being expanded at top level.
+- `bool about_to_expand_macro_p` :: True if a macro is queued for expansion.
+- `cpp_dir *quote_include` :: `#include "..."` search path.
+- `cpp_dir *bracket_include` :: `#include <...>` search path.
+- `cpp_dir no_search_path` :: A dummy path that disables search.
+- `_cpp_file *all_files` :: List of all known files encountered.
+- `_cpp_file *main_file` :: The initial input source file.
+- `htab *file_hash`, `htab *dir_hash` :: Hash tables for file and directory caching.
+- `file_hash_entry_pool *file_hash_entries` :: Pool allocator for file hash entries.
+- `htab *nonexistent_file_hash` :: Cache of known missing files (for fast rejection).
+- `obstack nonexistent_file_ob` :: Memory store for missing file data.
+- `bool quote_ignores_source_dir` :: Controls whether to skip the current file's directory when resolving `#include "..."`.
+- `bool seen_once_only` :: True if any `#pragma once` or `#import` was used.
+- `const cpp_hashnode *mi_cmacro`, `mi_ind_cmacro` :: Cached macro guards used for multiple-include optimization.
+- `bool mi_valid` :: Whether the multiple-inclusion optimization is currently valid.
+- `cpp_token *cur_token` :: The current token being read or expanded.
+- `tokenrun base_run, *cur_run` :: Token run (buffer) chain for macro-expanded tokens.
+- `unsigned int lookaheads` :: Number of lookahead tokens buffered.
+- `unsigned int keep_tokens` :: Whether to retain tokens for re-use or reprocessing.
+- `unsigned char *macro_buffer` :: Buffer holding macro definition text for diagnostics or display.
+- `unsigned int macro_buffer_len` :: Length of `macro_buffer`.
+- `cset_converter narrow_cset_desc` :: Converter from source charset to execution charset (e.g. UTF-8).
+- `cset_converter utf8_cset_desc`, `char16_cset_desc`, `char32_cset_desc`, `wide_cset_desc` :: Charset converters for UTF and wide characters.
+- `const unsigned char *date`, `*time` :: Cached date/time strings used for `__DATE__` and `__TIME__`.
+- `time_t time_stamp` :: Internal timestamp used for `__TIMESTAMP__`.
+- `int time_stamp_kind` :: Metadata on how timestamp was acquired.
+- `cpp_token avoid_paste`, `endarg` :: Special tokens used for controlling macro pasting behavior and argument marking.
+- `mkdeps *deps` :: Opaque pointer to dependency tracking system (used for `-M` options).
+- `obstack hash_ob`, `buffer_ob` :: Obstack memory pools for hash nodes and buffers, respectively.
+- `pragma_entry *pragmas` :: List of user-defined or built-in pragma handlers.
+- `cpp_callbacks cb` :: Callback structure for emitting diagnostics or user-visible events.
+- `ht *hash_table` :: Identifier hash table.
+- `op *op_stack`, `*op_limit` :: Stack used for evaluating constant expressions (e.g., in `#if`).
+- `cpp_options opts` :: Holds all preprocessor option settings (e.g. pedantic mode, line directives).
+- `spec_nodes spec_nodes` :: Special identifiers (`__VA_ARGS__`, `defined`, etc.).
+- `bool our_hashtable` :: Whether this instance owns the hash table memory.
+- `out { base, limit, cur, first_line }` :: Traditional output buffer.
+- `saved_cur`, `saved_rlimit`, `saved_line_base` :: Saved pointers for buffer overlays.
+- `cpp_savedstate *savedstate` :: Saved state for precompiled header support.
+- `unsigned int counter` :: Value of `__COUNTER__` macro.
+- `cpp_comment_table comments` :: Stores comments if `save_comments` is enabled.
+- `def_pragma_macro *pushed_macros` :: List of macros pushed via `#pragma push_macro`.
+- `location_t forced_token_location` :: Override location used for the next emitted token.
+- `location_t main_loc` :: Marker for the location of the main file’s first line.
+
+** Summary
+`cpp_reader` is a highly stateful construct. It abstracts preprocessing into a cooperative sequence of stages: file loading, lexical analysis, macro handling, directive parsing, and token expansion. Each of these is enabled or modulated via member fields. The design permits reuse of storage buffers, incremental context stacking, and precise location tracking across deeply nested macro expansions and file inclusions.
+* Enums and Constants
+** `include_type`
+Represents how a file was included (e.g., `#include`, `#import`, `-include`, etc.). Used to manage buffer overlays and inclusion depth.
+
+** `context_tokens_kind`
+Distinguishes how tokens are held in a `cpp_context`: direct, indirect, or extended.
+
+** Alignment Helpers
+- `DEFAULT_ALIGNMENT`: Derived from struct alignment.
+- `CPP_ALIGN2`, `CPP_ALIGN`: Ensure proper memory alignment.
+
+** Character Class Macros
+- `is_idchar`, `is_numchar`, `is_hspace`, `is_vspace`, etc.: Type-safe wrappers over libc ctype behavior with preprocessor-specific adjustments.
+
+* Buffers and Memory
+- `_cpp_get_buff`, `_cpp_release_buff`, `_cpp_extend_buff`, `_cpp_aligned_alloc`, `_cpp_unaligned_alloc`: Allocate and manage working buffers used during expansion.
+
+* Token and Macro Helpers
+- `_cpp_mark_macro_used`: Marks a macro as used for diagnostics.
+- `CPP_OPTION`, `CPP_BUFFER`, `CPP_INCREMENT_LINE`: Common access macros for reader state and buffer internals.
+- `SEEN_EOL()`: Helper to check if the last token was EOF.
+
+* Function Declarations by File
+** From macro.cc
+- `_cpp_create_definition`, `_cpp_new_macro`, `_cpp_notify_macro_use`, `_cpp_push_token_context`, etc.: Manage macro creation, expansion, and context.
+
+** From directives.cc
+- `_cpp_define_builtin`, `_cpp_handle_directive`, `_cpp_do__Pragma`, etc.: Directive parsing and #pragma handlers.
+
+** From files.cc
+- `_cpp_find_file`, `_cpp_stack_include`, `_cpp_pop_file_buffer`: File inclusion management and include guards.
+
+** From lex.cc
+- `_cpp_lex_token`, `_cpp_temp_token`, `_cpp_equiv_tokens`: Token lexing and temporary token generation.
+
+** From expr.cc
+- `_cpp_parse_expr`, `_cpp_expand_op_stack`: Expression parsing in `#if`/`#elif`.
+
+** From charset.cc
+- `_cpp_valid_utf8`, `_cpp_convert_input`, `_cpp_destroy_iconv`: Character encoding conversion routines.
+
+** From init.cc
+- `_cpp_restore_special_builtin`, `cpp_named_operator2name`: Initialization helpers for macro state.
+
+** From identifiers.cc
+- `_cpp_init_hashtable`, `_cpp_destroy_hashtable`: Identifier table setup and teardown.
+
+* Encoding and Normalization
+** `normalize_state`
+Tracks normalization level and combining characters for UCN validation and identifier processing.
+
+** `cset_converter`
+Holds state for iconv-based charset conversion. Used for input and output charset normalization.
+
+* Accessor Inline Functions
+- `_cpp_in_system_header`, `_cpp_in_main_source_file`, `_cpp_defined_macro_p`: Context-sensitive accessors.
+- `ustrcmp`, `ustrlen`, `uxstrdup`, `ufputs`, etc.: UTF-aware string handling routines.
+
+* Diagnostic Integration
+** `encoding_rich_location`
+Subclass of `rich_location` that forces encoding escape visibility for diagnostics. Constructed from `cpp_reader`.
+
+* Notes
+- This file is not compiled standalone but included in many CPP components.
+- It contains bridge-level API elements that link between token processing, buffer management, and frontend logic.
+- Care must be taken when editing alignment or buffer routines as they affect all downstream expansion logic.
+  
+* TODO
+- Document how iconv fallback works when `HAVE_ICONV` is not defined.
+- Clarify lifecycle of pushed macro contexts during nested `#pragma push_macro` chains.
+- Integrate doc with `macro.cc` and `lex.cc` references for cross-module tracing.
