@@ -1,0 +1,455 @@
+#+TITLE: lex.cc Detailed Structure and Function Index
+#+Author: Caelus, code formalist (GPT-4, OpenAI), Thomas
+#+Date:2025-05-09
+
+* Data Structures Found in Non-Static Function Signatures
+** struct context
+Used in lexer or normalization stages to track state during token reclassification or Unicode normalization.
+
+** enum cpp_token_fld_kind
+Enumeration describing the internal storage kind for a preprocessor token's value — distinguishes between identifiers, numbers, etc.
+
+** enum cpp_ttype
+Enumeration of token types recognized by the preprocessor (e.g., identifiers, punctuators, literals, etc.).
+
+** struct lit_accum
+Helper structure that accumulates string or character literal fragments during lexing.
+
+** struct normalize_state
+Tracks intermediate state during Unicode normalization of identifiers or literals.
+
+** struct token_spelling
+Structure used to store or compute the textual spelling of a token, including alternate representations (e.g., digraphs).
+* Data Structures Shared Among Functions in lex.cc
+** _cpp_buff
+Used in: _cpp_aligned_alloc, _cpp_extend_buff, _cpp_free_buff, _cpp_get_buff, _cpp_release_buff, free, is_macro, new_buff, usage  
+Temporary token buffer used during macro argument collection and expansion. Shared to manage input buffering across stages.
+
+** context
+Used in: _cpp_remaining_tokens_num_in_context, character, if, maybe_warn_bidi_on_close, on_char, rich_loc  
+State struct used in bidirectional text normalization and context-aware lexing. Functions reference it to apply UCN and bidi safety rules.
+
+** cpp_hashnode
+Used in: cpp_error, if, is_macro, lex_identifier, lex_identifier_intern, line, linemap_included_from  
+Represents identifiers and macro definitions. Shared among symbol lookup, macro parsing, and token classification functions.
+
+** cpp_token
+Used in: RESULT, _cpp_temp_token, cpp_directive_only_process, cpp_output_line_to_string, if, line, linemap_included_from, own, return  
+Token structure used to represent lexed entities passed between scanners, macro collectors, and diagnostic routines.
+
+** cpp_ttype
+Used in: is_macro, lex_string, own, return  
+Enumeration of token types (e.g., identifiers, keywords, operators). Shared by scanners and type-check logic to interpret input.
+* Non-Static Functions
+** _cpp_aligned_alloc
+- Signature: `unsigned char * _cpp_aligned_alloc (...)`
+- Purpose: Allocates a buffer with alignment suitable for vectorized scanning operations (e.g., SSE, AVX).
+
+** _cpp_append_extend_buff
+- Signature: `_cpp_buff * _cpp_append_extend_buff (...)`
+- Purpose: Appends additional space to an existing token buffer, used when macro expansions exceed initial estimates.
+
+** _cpp_clean_line
+- Signature: `void _cpp_clean_line (...)`
+- Purpose: Cleans lexer line state after processing a complete logical line.
+
+** _cpp_commit_buff
+- Signature: `void * _cpp_commit_buff (...)`
+- Purpose: Finalizes a temporary token buffer and returns a stable pointer to the committed data.
+
+** _cpp_equiv_tokens
+- Signature: `int _cpp_equiv_tokens (...)`
+- Purpose: Determines whether two tokens are equivalent, ignoring cosmetic differences such as spacing.
+
+** _cpp_extend_buff
+- Signature: `void _cpp_extend_buff (...)`
+- Purpose: Increases the capacity of a token buffer to accommodate additional tokens during macro processing.
+
+** _cpp_free_buff
+- Signature: `void _cpp_free_buff (...)`
+- Purpose: Releases memory allocated for a temporary or committed token buffer.
+
+** _cpp_get_buff
+- Signature: `_cpp_buff * _cpp_get_buff (...)`
+- Purpose: Returns a new or recycled token buffer from the internal pool, minimizing allocations.
+
+** _cpp_get_fresh_line
+- Signature: `bool _cpp_get_fresh_line (...)`
+- Purpose: Consumes input until a logical line is ready. Handles escaped newlines.
+
+** _cpp_init_lexer
+- Signature: `void _cpp_init_lexer (...)`
+- Purpose: Initializes the core lexer state: buffers, token rings, and diagnostic counters.
+
+** _cpp_init_tokenrun
+- Signature: `void _cpp_init_tokenrun (...)`
+- Purpose: Initializes a ring buffer or region for holding tokens during lexing.
+
+** _cpp_lex_direct
+- Signature: `cpp_token * _cpp_lex_direct (...)`
+- Purpose: Lexes a single token from the input without macro expansion — used for directive parsing.
+
+** _cpp_lex_identifier
+- Signature: `cpp_hashnode * _cpp_lex_identifier (...)`
+- Purpose: Lexes an identifier and returns a hashnode for it, performing UCN expansion and keyword recognition.
+
+** _cpp_lex_token
+- Signature: `const cpp_token * _cpp_lex_token (...)`
+- Purpose: Lexes the next token from the input stream, handling macro expansion and buffering.
+
+** _cpp_process_line_notes
+- Signature: `void _cpp_process_line_notes (...)`
+- Purpose: Handles mapping #line notes and diagnostic position metadata.
+
+** _cpp_release_buff
+- Signature: `void _cpp_release_buff (...)`
+- Purpose: Returns a previously used token buffer back to the internal pool for reuse.
+
+** _cpp_remaining_tokens_num_in_context
+- Signature: `int _cpp_remaining_tokens_num_in_context (...)`
+- Purpose: Returns how many tokens are left within the current lexing context.
+
+** _cpp_skip_block_comment
+- Signature: `bool _cpp_skip_block_comment (...)`
+- Purpose: Skips over block comments, optionally returning whether line state changed.
+
+** _cpp_spell_ident_ucns
+- Signature: `unsigned char * _cpp_spell_ident_ucns (...)`
+- Purpose: Generates a UTF-8 spelling for identifiers that contain Universal Character Names (UCNs).
+
+** _cpp_temp_token
+- Signature: `cpp_token * _cpp_temp_token (...)`
+- Purpose: Allocates space for a temporary token during parsing or lookahead.
+
+** _cpp_unaligned_alloc
+- Signature: `unsigned char * _cpp_unaligned_alloc (...)`
+- Purpose: Allocates unaligned memory for fallback lexers or comment scanning buffers.
+
+** cpp_alloc_token_string
+- Signature: `const uchar * cpp_alloc_token_string (...)`
+- Purpose: Allocates a fresh string buffer for a token's textual content, typically used in output or diagnostics.
+
+** cpp_avoid_paste
+- Signature: `int cpp_avoid_paste (...)`
+- Purpose: Determines whether a space is needed between two tokens to avoid unintended pasting.
+
+** cpp_force_token_locations
+- Signature: `void cpp_force_token_locations (...)`
+- Purpose: Forces the preprocessor to track source locations for all tokens, overriding lazy behavior.
+
+** cpp_get_comments
+- Signature: `cpp_comment_table * cpp_get_comments (...)`
+- Purpose: Returns a pointer to the internal comment table used for diagnostics or pretty-printing.
+
+** cpp_ideq
+- Signature: `int cpp_ideq (...)`
+- Purpose: Compares two identifiers for equality in a normalized preprocessor sense.
+
+** cpp_output_line
+- Signature: `void cpp_output_line (...)`
+- Purpose: Outputs an entire preprocessor line, including comments or tokens, to a file.
+
+** cpp_output_line_to_string
+- Signature: `unsigned char * cpp_output_line_to_string (...)`
+- Purpose: Generates a string representation of a preprocessed line for diagnostics.
+
+** cpp_output_token
+- Signature: `void cpp_output_token (...)`
+- Purpose: Writes a token to an output stream, respecting spacing and formatting rules.
+
+** cpp_peek_token
+- Signature: `const cpp_token * cpp_peek_token (...)`
+- Purpose: Returns a pointer to the next token without consuming it. Used in lookahead.
+
+** cpp_spell_token
+- Signature: `unsigned char * cpp_spell_token (...)`
+- Purpose: Computes or reconstructs the text spelling of a token from internal data.
+
+** cpp_stop_forcing_token_locations
+- Signature: `void cpp_stop_forcing_token_locations (...)`
+- Purpose: Stops forcibly tracking token locations, restoring default behavior.
+
+** cpp_token_as_text
+- Signature: `unsigned char * cpp_token_as_text (...)`
+- Purpose: Converts a token into its textual representation (used for macro debug output or trace logs).
+
+** cpp_token_len
+- Signature: `unsigned int cpp_token_len (...)`
+- Purpose: Computes the length of a token for buffer management or output purposes.
+
+** cpp_token_val_index
+- Signature: `enum cpp_token_fld_kind cpp_token_val_index (...)`
+- Purpose: Returns the kind of value stored in the token (e.g., string, identifier, number).
+
+** cpp_type2name
+- Signature: `const char * cpp_type2name (...)`
+- Purpose: Maps internal token types (e.g., CPP_NUMBER) to human-readable strings like "number".
+
+** current_ctx
+- Signature: `kind current_ctx (...)`
+- Purpose: Returns the current Unicode bidirectional context (e.g., LTR, RTL) used during lexing.
+
+** current_ctx_loc
+- Signature: `location_t current_ctx_loc (...)`
+- Purpose: Returns the source location associated with the current bidi context — for diagnostics.
+
+** current_ctx_ucn_p
+- Signature: `bool current_ctx_ucn_p (...)`
+- Purpose: Returns whether the current Unicode context allows Universal Character Names (UCNs).
+
+** init_vectorized_lexer
+- Signature: `define HAVE_init_vectorized_lexer 1
+static inline void init_vectorized_lexer (...)`
+- Purpose: Initializes vectorized scanning function pointers depending on CPU features.
+
+** on_char
+- Signature: `void on_char (...)`
+- Purpose: Handles logic when a character is encountered that might affect bidirectional or normalization context.
+
+** on_close
+- Signature: `void on_close (...)`
+- Purpose: Called when a bidirectional context-closing token (e.g., PDF) is encountered.
+
+** pop
+- Signature: `void pop (...)`
+- Purpose: Pops the current normalization or bidi context off the internal context stack.
+
+** pop_kind_at
+- Signature: `kind pop_kind_at (...)`
+- Purpose: Returns the kind of context that would be popped at a given depth (used for lookahead).
+
+** read_char
+- Signature: `char read_char (...)`
+- Purpose: Reads a character from the input buffer, optionally applying normalization or escaping rules.
+
+** search_line_fast
+- Signature: `ATTRIBUTE_NO_SANITIZE_UNDEFINED
+static const uchar * search_line_fast (...)`
+- Purpose: Fallback vectorized line scanner for supported architectures. Tries MMX, SSE, etc.
+
+** search_line_fast
+- Signature: `define AARCH64_MIN_PAGE_SIZE 4096
+
+static const uchar * search_line_fast (...)`
+- Purpose: Fallback vectorized line scanner for supported architectures. Tries MMX, SSE, etc.
+
+** search_line_mmx
+- Signature: `endif search_line_mmx (...)`
+- Purpose: Performs vectorized scanning of input using MMX instructions.
+
+** search_line_sse2
+- Signature: `endif search_line_sse2 (...)`
+- Purpose: Performs fast input scanning using SSE2 instructions on aligned buffers.
+
+** search_line_sse42
+- Signature: `endif search_line_sse42 (...)`
+- Purpose: Uses SSE4.2 instructions (e.g., `pcmpestri`) to scan for newline and comment sequences.
+* File Scope Data Structures
+- `CPP_TOKEN_FLD_ARG_NO`
+- `CPP_TOKEN_FLD_NODE`
+- `CPP_TOKEN_FLD_NONE`
+- `CPP_TOKEN_FLD_PRAGMA`
+- `CPP_TOKEN_FLD_SOURCE`
+- `CPP_TOKEN_FLD_STR`
+- `CPP_TOKEN_FLD_TOKEN_NO`
+- `Foundation`
+- `NULL`
+- `SSE1`
+- `WARRANTY`
+- `a`
+- `accum`
+- `after_backslash`
+- `all_upper`
+- `alloced`
+- `backup`
+- `bad_string`
+- `bol`
+- `break`
+- `buffer`
+- `c`
+- `category`
+- `col`
+- `cols`
+- `combined_loc`
+- `count`
+- `data`
+- `delim_len`
+- `delimited_string`
+- `dest`
+- `dflt`
+- `done`
+- `done_comment`
+- `done_string`
+- `end`
+- `end_loc`
+- `end_offset`
+- `eol`
+- `esc`
+- `extra_len`
+- `f`
+- `fallthrough_comment`
+- `false`
+- `found`
+- `fresh_line`
+- `hash`
+- `header_count`
+- `i`
+- `impl`
+- `import`
+- `index`
+- `is_block`
+- `ix`
+- `j`
+- `l`
+- `la`
+- `len`
+- `line_count`
+- `loc`
+- `m`
+- `m_custom_label`
+- `m_kind`
+- `m_loc`
+- `m_ucn`
+- `magic`
+- `mask`
+- `maybe_number_start`
+- `minimum`
+- `misalign`
+- `module_p`
+- `n`
+- `name`
+- `new_buff`
+- `next_line`
+- `not_module`
+- `nst`
+- `num_bytes`
+- `ok`
+- `ones`
+- `orig_line`
+- `out`
+- `p`
+- `peek`
+- `peek_R`
+- `peek_u`
+- `peek_u8`
+- `peektok`
+- `prefix_len`
+- `program`
+- `ptr`
+- `quote_eight`
+- `quote_first`
+- `quote_peek`
+- `raw`
+- `read_note`
+- `repl_bs`
+- `repl_cr`
+- `repl_nl`
+- `repl_qm`
+- `restart`
+- `result`
+- `ret`
+- `room`
+- `s`
+- `saw_NUL`
+- `search`
+- `search_line_fast`
+- `second_raw`
+- `shift`
+- `si`
+- `size`
+- `skipped_white`
+- `slen`
+- `sloc`
+- `slow_path`
+- `software`
+- `spell_ident`
+- `spelling`
+- `src_loc`
+- `src_range`
+- `star`
+- `start`
+- `start_loc`
+- `start_offset`
+- `sv`
+- `sz`
+- `t`
+- `terminator`
+- `tok_range`
+- `true`
+- `type`
+- `ucn_len`
+- `ucn_len_c`
+- `update_tokens_line`
+- `utf32`
+- `utf8_signifier`
+- `utf8_start`
+- `v`
+- `want_number`
+- `warn_bidi`
+- `warn_bidi_p`
+- `was`
+- `word_type`
+- `ws`
+- `xmask`
+- `zero`
+
+* Static Functions
+- `void add_line_note (...)`
+- `int skip_line_comment (...)`
+- `void skip_whitespace (...)`
+- `void lex_string (...)`
+- `void save_comment (...)`
+- `void store_comment (...)`
+- `void create_literal (...)`
+- `bool warn_in_comment (...)`
+- `int name_p (...)`
+- `void add_line_note (...)`
+- `inline word_type acc_char_mask_misalign (...)`
+- `inline word_type acc_char_replicate (...)`
+- `inline word_type acc_char_cmp (...)`
+- `inline int acc_char_index (...)`
+- `const uchar * search_line_acc_char (...)`
+- `const uchar * search_line_acc_char (...)`
+- `const uchar * search_line_fast (...)`
+- `const uchar * search_line_fast (...)`
+- `bool warn_in_comment (...)`
+- `location_t get_location_for_byte_range_in_cur_line (...)`
+- `bidi::kind get_bidi_utf8_1 (...)`
+- `bidi::kind get_bidi_utf8 (...)`
+- `bidi::kind get_bidi_ucn_1 (...)`
+- `bidi::kind get_bidi_ucn (...)`
+- `void maybe_warn_bidi_on_close (...)`
+- `void maybe_warn_bidi_on_char (...)`
+- `int skip_line_comment (...)`
+- `void skip_whitespace (...)`
+- `int name_p (...)`
+- `void warn_about_normalization (...)`
+- `bool forms_identifier_p (...)`
+- `void maybe_va_opt_error (...)`
+- `cpp_hashnode * lex_identifier_intern (...)`
+- `cpp_hashnode * lex_identifier (...)`
+- `void lex_number (...)`
+- `void create_literal (...)`
+- `bool is_macro (...)`
+- `bool is_macro_not_literal_suffix (...)`
+- `void lex_raw_string (...)`
+- `void lex_string (...)`
+- `void store_comment (...)`
+- `void save_comment (...)`
+- `bool fallthrough_comment_p (...)`
+- `tokenrun * next_tokenrun (...)`
+- `const cpp_token* _cpp_token_from_context_at (...)`
+- `void cpp_maybe_module_directive (...)`
+- `size_t utf8_to_ucn (...)`
+- `const unsigned char * cpp_digraph2name (...)`
+- `_cpp_buff * new_buff (...)`
+- `const unsigned char * do_peek_backslash (...)`
+- `const unsigned char * do_peek_next (...)`
+- `const unsigned char * do_peek_prev (...)`
+- `const unsigned char * do_peek_ident (...)`
+- `bool do_peek_module (...)`
+
+
+
+
+

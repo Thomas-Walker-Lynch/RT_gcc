@@ -143,29 +143,31 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
    #warning, #include_next, and #import are deprecated.  The name is
    where the extension appears to have come from.  */
 
-#define DIRECTIVE_TABLE							\
-  D(define,	T_DEFINE = 0,	KANDR,     IN_I)			\
-  D(include,	T_INCLUDE,	KANDR,     INCL | EXPAND)		\
-  D(endif,	T_ENDIF,	KANDR,     COND)			\
-  D(ifdef,	T_IFDEF,	KANDR,     COND | IF_COND)		\
-  D(if,		T_IF,		KANDR, 	   COND | IF_COND | EXPAND) 	\
-  D(else,	T_ELSE,		KANDR,     COND)	   		\
-  D(ifndef,	T_IFNDEF,	KANDR,     COND | IF_COND)		\
-  D(undef,	T_UNDEF,	KANDR,     IN_I)			\
-  D(line,	T_LINE,		KANDR,     EXPAND)			\
-  D(elif,	T_ELIF,		STDC89,    COND | EXPAND)		\
-  D(elifdef,	T_ELIFDEF,	STDC2X,    COND | ELIFDEF)		\
-  D(elifndef,	T_ELIFNDEF,	STDC2X,    COND | ELIFDEF)		\
-  D(error,	T_ERROR,	STDC89,    0)				\
-  D(pragma,	T_PRAGMA,	STDC89,    IN_I)			\
-  D(warning,	T_WARNING,	EXTENSION, 0)				\
-  D(include_next, T_INCLUDE_NEXT, EXTENSION, INCL | EXPAND)		\
-  D(ident,	T_IDENT,	EXTENSION, IN_I)			\
-  D(import,	T_IMPORT,	EXTENSION, INCL | EXPAND)  /* ObjC */	\
-  D(assert,	T_ASSERT,	EXTENSION, DEPRECATED)	   /* SVR4 */	\
-  D(unassert,	T_UNASSERT,	EXTENSION, DEPRECATED)	   /* SVR4 */	\
-  D(sccs,	T_SCCS,		EXTENSION, IN_I)   	   /*  SVR4? */ \
-  D(assign,	T_ASSIGN,	EXTENSION, IN_I)		
+#define DIRECTIVE_TABLE                                                    \
+  D(define        ,T_DEFINE = 0    ,KANDR       ,IN_I)                     \
+  D(include       ,T_INCLUDE       ,KANDR       ,INCL | EXPAND)            \
+  D(endif         ,T_ENDIF         ,KANDR       ,COND)                     \
+  D(ifdef         ,T_IFDEF         ,KANDR       ,COND | IF_COND)           \
+  D(if            ,T_IF            ,KANDR       ,COND | IF_COND | EXPAND)  \
+  D(else          ,T_ELSE          ,KANDR       ,COND)                     \
+  D(ifndef        ,T_IFNDEF        ,KANDR       ,COND | IF_COND)           \
+  D(undef         ,T_UNDEF         ,KANDR       ,IN_I)                     \
+  D(line          ,T_LINE          ,KANDR       ,EXPAND)                   \
+  D(elif          ,T_ELIF          ,STDC89      ,COND | EXPAND)            \
+  D(elifdef       ,T_ELIFDEF       ,STDC2X      ,COND | ELIFDEF)           \
+  D(elifndef      ,T_ELIFNDEF      ,STDC2X      ,COND | ELIFDEF)           \
+  D(error         ,T_ERROR         ,STDC89      ,0)                        \
+  D(pragma        ,T_PRAGMA        ,STDC89      ,IN_I)                     \
+  D(warning       ,T_WARNING       ,EXTENSION   ,0)                        \
+  D(include_next  ,T_INCLUDE_NEXT  ,EXTENSION   ,INCL | EXPAND)            \
+  D(ident         ,T_IDENT         ,EXTENSION   ,IN_I)                     \
+  D(import        ,T_IMPORT        ,EXTENSION   ,INCL | EXPAND) /* ObjC */ \
+  D(assert        ,T_ASSERT        ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
+  D(unassert      ,T_UNASSERT      ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
+  D(sccs          ,T_SCCS          ,EXTENSION   ,IN_I)         /* SVR4? */ \
+  D(macro         ,T_MACRO         ,EXTENSION   ,IN_I)                     \
+  D(assign        ,T_ASSIGN        ,EXTENSION   ,IN_I)
+
 
 /* #sccs is synonymous with #ident.  */
 #define do_sccs do_ident
@@ -2800,9 +2802,47 @@ _cpp_bracket_include(cpp_reader *pfile)
 
 
 //--------------------------------------------------------------------------------
+// RT extensions 
+//--------------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------------
+// directive `#macro`
+//   #macro name (parameter [,parameter] ...) (body_expr)
+//   #macro name () (body_expr)
+//
+//   The body expr can be empty, but the parents remain
+//   Whitespace between name and parents, and between parens, is ignored
+
+extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
+
+static void
+do_macro (cpp_reader *pfile)
+{
+  cpp_hashnode *node = lex_macro_node(pfile, true);
+
+  if(node)
+    {
+      /* If we have been requested to expand comments into macros,
+	 then re-enable saving of comments.  */
+      pfile->state.save_comments =
+	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
+
+      if(pfile->cb.before_define)
+	pfile->cb.before_define (pfile);
+
+      if( _cpp_create_macro(pfile, node) )
+	if (pfile->cb.define)
+	  pfile->cb.define (pfile, pfile->directive_line, node);
+
+      node->flags &= ~NODE_USED;
+    }
+}
 
 
-extern bool _assign_handler(cpp_reader *pfile, cpp_hashnode *node);
+//--------------------------------------------------------------------------------
+// RT extention, directive `#assign`
+
+extern bool _cpp_create_assign(cpp_reader *pfile, cpp_hashnode *node);
 
 const char *
 cpp_token_as_text(const cpp_token *token)
@@ -2857,8 +2897,10 @@ cpp_token_as_text(const cpp_token *token)
   return buffer;
 }
 
-static void do_assign(cpp_reader *pfile){
+cpp_hashnode *
+_cpp_lex_paren_delim_token(cpp_reader *pfile){
   const cpp_token *tok = _cpp_lex_token(pfile);
+
   if(tok->type != CPP_OPEN_PAREN){
     cpp_error_with_line(
       pfile
@@ -2868,7 +2910,7 @@ static void do_assign(cpp_reader *pfile){
       ,"expected '(' before name ,but found: %s"
       ,cpp_token_as_text(tok)
     );
-    return;
+    return NULL;
   }
 
   tok = _cpp_lex_token(pfile);
@@ -2881,8 +2923,9 @@ static void do_assign(cpp_reader *pfile){
       ,"expected macro name identifier ,but found: %s"
       ,cpp_token_as_text(tok)
     );
-    return;
+    return NULL;
   }
+
   cpp_hashnode *node = tok->val.node.node;
 
   tok = _cpp_lex_token(pfile);
@@ -2895,164 +2938,31 @@ static void do_assign(cpp_reader *pfile){
       ,"expected ')' after macro name ,but found: %s"
       ,cpp_token_as_text(tok)
     );
-    return;
-  }
-
-  if(node){
-   /* If we have been requested to expand comments into macros,
-       then re-enable saving of comments.  */
-    pfile->state.save_comments =
-      ! CPP_OPTION (pfile ,discard_comments_in_macro_exp);
-
-    if (pfile->cb.before_define)
-      pfile->cb.before_define (pfile);
-
-    if (_assign_handler (pfile ,node))
-      if (pfile->cb.define)
-        pfile->cb.define (pfile ,pfile->directive_line ,node);
-
-    node->flags &= ~NODE_USED;
-  }
-}
-
-
-#if 0
-static void
-do_assign(cpp_reader *pfile){
-
-  // cpp_hashnode *node = lex_macro_node (pfile, true);
-  const cpp_token *tok = _cpp_lex_token(pfile);
-  if (tok->type != CPP_OPEN_PAREN) {
-    cpp_error_with_line(
-      pfile,
-      CPP_DL_ERROR,
-      tok->src_loc,
-      0,
-      "expected '(' before name, but found: %s"
-      cpp_token_as_text(tok);
-    );
-    return;
-  }
-
-  tok = _cpp_lex_token(pfile);
-  if (tok->type != CPP_NAME) {
-    cpp_error_with_line(
-      pfile,
-      CPP_DL_ERROR,
-      tok->src_loc,
-      0,
-      "expected macro name identifier, but found: type=%d text='%.*s'",
-      tok->type,
-      tok->val.str.len,
-      tok->val.str.text
-    );
-    return;
-  }
-  cpp_hashnode *node = tok->val.node.node;
-
-  tok = _cpp_lex_token(pfile);
-  if (tok->type != CPP_CLOSE_PAREN) {
-    cpp_error_with_line(
-      pfile,
-      CPP_DL_ERROR,
-      tok->src_loc,
-      0,
-      "expected ')' after macro name, but found: type=%d text='%.*s'",
-      tok->type,
-      tok->val.str.len,
-      tok->val.str.text
-    );
-    return;
-  }
-
-  if (node)
-    {
-      /* If we have been requested to expand comments into macros,
-	 then re-enable saving of comments.  */
-      pfile->state.save_comments =
-	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
-
-      if (pfile->cb.before_define)
-	pfile->cb.before_define (pfile);
-
-      if (_assign_handler (pfile, node))
-	if (pfile->cb.define)
-	  pfile->cb.define (pfile, pfile->directive_line, node);
-
-      node->flags &= ~NODE_USED;
-    }
-}
-#endif
-
-#if 0
-
-cpp_token *
-assign_get_name(cpp_reader *pfile){
-  //  const cpp_token *name_token = cpp_get_token(pfile);
-  const cpp_token *name_token = _cpp_lex_token(pfile);
-
-  cpp_warning_with_line(
-     pfile,
-     CPP_W_NONE,
-     name_token->src_loc,
-     0,
-     "3 assign name is being set to: %.*s",
-     name_token->val.str.len,
-     name_token->val.str.text
-  );
-
-  if (name_token->type != CPP_NAME) {
-    cpp_error_with_line(
-       pfile,
-       CPP_DL_ERROR,
-       name_token->src_loc,
-       0,
-       "First argument to #assign must be a macro name, instead found: %.*s",
-       name_token->val.str.len,
-       name_token->val.str.text
-    );
     return NULL;
   }
 
-  // Export this into the wider context
-  cpp_token *copy = (cpp_token *) _cpp_reserve_room(pfile, 0, sizeof(cpp_token));
-  *copy = *name_token;
-  return copy;
+  return node;
 }
 
-static void
-do_assign(cpp_reader *pfile)
-{
-  cpp_token *name_token = assign_get_name(pfile);
-  if (!name_token) {
-    return;
-  }
+static void do_assign(cpp_reader *pfile){
 
-  cpp_macro *macro = _cpp_new_macro(
-    pfile,
-    cmk_macro,
-    _cpp_reserve_room(pfile, 0, sizeof(cpp_macro))
-  );
+  cpp_hashnode *node = _cpp_lex_paren_delim_token(pfile);
+  if(!node) return;
 
-  macro->fun_like = 0;
-  macro->paramc   = 0;
-  macro->variadic = 0;
-  macro->count    = 1;
-  macro->used     = 1;
+  /* If we have been requested to expand comments into macros,
+     then re-enable saving of comments.  */
+  pfile->state.save_comments =
+    ! CPP_OPTION (pfile ,discard_comments_in_macro_exp);
 
-  cpp_token *value_token = &macro->exp.tokens[0];
-  value_token->type         = CPP_NUMBER;
-  value_token->val.str.text = (const unsigned char *) "42";
-  value_token->val.str.len  = 2;
-  value_token->flags        = 0;
+  if (pfile->cb.before_define)
+    pfile->cb.before_define (pfile);
 
-  cpp_hashnode *node = name_token->val.node.node;
-  node->type         = NT_USER_MACRO;
-  node->value.macro  = macro;
+  if (_cpp_create_assign (pfile ,node))
+    if (pfile->cb.define)
+      pfile->cb.define (pfile ,pfile->directive_line ,node);
 
-  _cpp_mark_macro_used(node);
-  cpp_warning(pfile, CPP_W_NONE, "Assigned macro %s as 42", NODE_NAME(node));
+  node->flags &= ~NODE_USED;
 
 }
 
-#endif
+

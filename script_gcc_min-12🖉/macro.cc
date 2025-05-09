@@ -4130,10 +4130,348 @@ cpp_macro_definition (cpp_reader *pfile, cpp_hashnode *node,
   return pfile->macro_buffer;
 }
 
+
+//--------------------------------------------------------------------------------
+// RT extensions 
 //--------------------------------------------------------------------------------
 
+// see directives.cc
+extern const char *cpp_token_as_text(const cpp_token *token);
+
+// a helper function for probing where we are at in the parse
+void
+debug_peek_token (cpp_reader *pfile)
+{
+  cpp_token *tok = _cpp_lex_direct(pfile);
+
+  cpp_error_with_line(
+    pfile,
+    CPP_DL_ERROR,
+    tok->src_loc,
+    0,
+    "DEBUG: next token is: `%s`",
+    (const char *) cpp_token_as_text(tok)
+  );
+
+  _cpp_backup_tokens(pfile, 1);
+}
+
+static bool
+collect_macro_body_tokens (cpp_reader *pfile,
+                           cpp_macro *macro,
+                           unsigned int *num_extra_tokens_out,
+                           const char *paste_op_error_msg)
+{
+  bool following_paste_op = false;
+  unsigned int num_extra_tokens = 0;
+
+  for (vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);; )
+    {
+      cpp_token *token = NULL;
+
+      macro = lex_expansion_token(pfile, macro);
+      token = &macro->exp.tokens[macro->count++];
+
+      if (macro->count > 1 && token[-1].type == CPP_HASH && macro->fun_like)
+        {
+          if (token->type == CPP_MACRO_ARG
+              || (macro->variadic
+                  && token->type == CPP_NAME
+                  && token->val.node.node == pfile->spec_nodes.n__VA_OPT__))
+            {
+              if (token->flags & PREV_WHITE)
+                token->flags |= SP_PREV_WHITE;
+              if (token[-1].flags & DIGRAPH)
+                token->flags |= SP_DIGRAPH;
+              token->flags &= ~PREV_WHITE;
+              token->flags |= STRINGIFY_ARG;
+              token->flags |= token[-1].flags & PREV_WHITE;
+              token[-1] = token[0];
+              macro->count--;
+            }
+          else if (CPP_OPTION (pfile, lang) != CLK_ASM)
+            {
+              cpp_error(pfile, CPP_DL_ERROR,
+                        "'#' is not followed by a macro parameter");
+              return false;
+            }
+        }
+
+      if (token->type == CPP_EOF)
+        {
+          if (following_paste_op)
+            {
+              cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+              return false;
+            }
+          if (!vaopt_tracker.completed())
+            return false;
+          break;
+        }
+
+      if (token->type == CPP_PASTE)
+        {
+          if (macro->count == 1)
+            {
+              cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+              return false;
+            }
+
+          if (following_paste_op)
+            {
+              num_extra_tokens++;
+              token->val.token_no = macro->count - 1;
+            }
+          else
+            {
+              --macro->count;
+              token[-1].flags |= PASTE_LEFT;
+              if (token->flags & DIGRAPH)
+                token[-1].flags |= SP_DIGRAPH;
+              if (token->flags & PREV_WHITE)
+                token[-1].flags |= SP_PREV_WHITE;
+            }
+          following_paste_op = true;
+        }
+      else
+        following_paste_op = false;
+
+      if (vaopt_tracker.update(token) == vaopt_state::ERROR)
+        return false;
+    }
+
+  *num_extra_tokens_out = num_extra_tokens;
+  return true;
+}
+
+
+//--------------------------------------------------------------------------------
+// for `#macro` directive
+/*
+   #macro NAME ( [optional parameters] ) (body)
+   like _cpp_create_definition though uses paren blancing instead or requiring a single line definition.
+*/
+
+/*
+  the cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {`
+  it has a flexible array field in a union as a last member: cpp_token tokens[1];
+*/
+
+// derived from create_iso_defined
+static cpp_macro *
+create_iso_macro (cpp_reader *pfile)
+{
+  bool following_paste_op = false;
+  const char *paste_op_error_msg =
+    N_("'##' cannot appear at either end of a macro expansion");
+  unsigned int num_extra_tokens = 0;
+  unsigned nparms = 0;
+  cpp_hashnode **params = NULL;
+  bool varadic = false;
+  bool ok = false;
+  cpp_macro *macro = NULL;
+
+  /* 
+    -Saves token allocation address held in pfile->cur_token.
+    -Gives a new token allocation address to pfile->cur_token, that of cpp_token first.
+
+    Neither `first` nor `saved_cur_token` are referred to again, but as I don't have a
+    full test bench, I will leave this as I found it. Perhaps in the future if someone
+    understands what this is for, they can replace this comment. -Thomas
+
+    -Parses out a token called 'token'. 'token' does get used.
+  */
+  cpp_token first;
+  cpp_token *saved_cur_token = pfile->cur_token;
+  pfile->cur_token = &first;
+  cpp_token *token = _cpp_lex_direct (pfile);
+  pfile->cur_token = saved_cur_token;
+
+  /* 
+     -For #define if the next token is a space, then it is not a function macro.
+     -For #macro it is always a function macro, perhaps with an empty param list.
+  */
+  if(token->type != CPP_OPEN_PAREN){
+    cpp_error_with_line(
+      pfile
+      ,CPP_DL_ERROR
+      ,token->src_loc
+      ,0
+      ,"expected '(' to open arguments list, but found: %s"
+      ,cpp_token_as_text(token)
+    );
+    goto out;
+  }
+
+  /*
+    - returns parameter list for a function macro, or NULL
+    - returns via &arg count of parameters
+    - returns via &arg the varadic flag
+
+    after parse_parms runs, the next token returned by pfile will be subsequent to the parameter list, e.g.:
+       7 |   #macro Q(f ,...) printf(f ,__VA_ARGS__)
+         |                    ^~~~~~
+    
+  */
+  if( !parse_params(pfile, &nparms, &varadic) ) goto out;
+
+  // finalizes the reserved room, otherwise it will be reused on the next reserve room call.
+  params = (cpp_hashnode **)_cpp_commit_buff( pfile, sizeof (cpp_hashnode *) * nparms );
+  token = NULL;
+
+  // This reserves room for a new macro struct. A macro struct is variable size, the actual size will be worked out when the memory is committed.
+  macro = _cpp_new_macro(
+    pfile
+    ,cmk_macro
+    ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
+  );
+  macro->variadic = varadic;
+  macro->paramc = nparms;
+  macro->parm.params = params;
+  macro->fun_like = true;
+
+  // collects from pfile the tokens that constitute the macro body
+  if (!collect_macro_body_tokens(pfile, macro, &num_extra_tokens, paste_op_error_msg))
+    goto out;
+
+  // At this point, even if the body parse fails, we will say we made a macro. I'm not sure why as we haven't commited it yet, but this is what is in the code. Apparently we throw away the macro if the body does not parse.
+  ok = true;
+
+  /* Don't count the CPP_EOF.  */
+  macro->count--;
+
+  // commit the cpp struct to memory
+  // the struct reserves space for one token, the others run off the end
+  macro = (cpp_macro *)_cpp_commit_buff(
+    pfile
+   ,sizeof (cpp_macro) - sizeof (cpp_token) + sizeof (cpp_token) * macro->count
+  );
+
+
+  /*
+    It might be that the first token of the macro body was preceded by white space,so
+    the white space flag is set. However, upon expansion, there might not be a white
+    space before said token, so the following code clears the flag.
+  */
+  if (macro->count)
+    macro->exp.tokens[0].flags &= ~PREV_WHITE;
+
+  /*
+    Identifies consecutive ## tokens (a.k.a. CPP_PASTE) that were invalid or ambiguous,
+
+    Removes them from the main macro body,
+
+    Stashes them at the end of the tokens[] array in the same memory,
+
+    Sets macro->extra_tokens = 1 to signal their presence.
+  */
+  if (num_extra_tokens)
+    {
+      /* Place second and subsequent ## or %:%: tokens in sequences of
+	 consecutive such tokens at the end of the list to preserve
+	 information about where they appear, how they are spelt and
+	 whether they are preceded by whitespace without otherwise
+	 interfering with macro expansion.   Remember, this is
+	 extremely rare, so efficiency is not a priority.  */
+      cpp_token *temp = (cpp_token *)_cpp_reserve_room
+	(pfile, 0, num_extra_tokens * sizeof (cpp_token));
+      unsigned extra_ix = 0, norm_ix = 0;
+      cpp_token *exp = macro->exp.tokens;
+      for (unsigned ix = 0; ix != macro->count; ix++)
+	if (exp[ix].type == CPP_PASTE)
+	  temp[extra_ix++] = exp[ix];
+	else
+	  exp[norm_ix++] = exp[ix];
+      memcpy (&exp[norm_ix], temp, num_extra_tokens * sizeof (cpp_token));
+
+      /* Record there are extra tokens.  */
+      macro->extra_tokens = 1;
+    }
+
+ out:
+
+  /*
+    - This resets a flag in the parser’s state machine, pfile.
+    - The field `va_args_ok` tracks whether the current macro body is allowed to reference `__VA_ARGS__` (or more precisely, `__VA_OPT__`).
+    - It's set **while parsing a macro body** that might use variadic logic — particularly in `vaopt_state` tracking.
+
+    Resetting it here ensures that future macros aren't accidentally parsed under the assumption that variadic substitution is valid.
+  */
+  pfile->state.va_args_ok = 0;
+
+  /*
+    Earlier we did:
+      if (!parse_params(pfile, &nparms, &variadic)) goto out;
+    This cleans up temporary memory used by parse_params.
+  */
+  _cpp_unsave_parameters (pfile, nparms);
+
+  return ok ? macro : NULL;
+}
+
+
+
 bool
-_assign_handler(cpp_reader *pfile, cpp_hashnode *node){
+_cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
+  cpp_macro *macro;
+
+  macro = create_iso_macro (pfile);
+
+  if (!macro)
+    return false;
+
+  if (cpp_macro_p (node))
+    {
+      if (CPP_OPTION (pfile, warn_unused_macros))
+	_cpp_warn_if_unused_macro (pfile, node, NULL);
+
+      if (warn_of_redefinition (pfile, node, macro))
+	{
+          const enum cpp_warning_reason reason
+	    = (cpp_builtin_macro_p (node) && !(node->flags & NODE_WARN))
+	    ? CPP_W_BUILTIN_MACRO_REDEFINED : CPP_W_NONE;
+
+	  bool warned = 
+	    cpp_pedwarning_with_line (pfile, reason,
+				      pfile->directive_line, 0,
+				      "\"%s\" redefined", NODE_NAME (node));
+
+	  if (warned && cpp_user_macro_p (node))
+	    cpp_error_with_line (pfile, CPP_DL_NOTE,
+				 node->value.macro->line, 0,
+			 "this is the location of the previous definition");
+	}
+      _cpp_free_definition (node);
+    }
+
+  /* Enter definition in hash table.  */
+  node->type = NT_USER_MACRO;
+  node->value.macro = macro;
+  if (! ustrncmp (NODE_NAME (node), DSC ("__STDC_"))
+      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_FORMAT_MACROS")
+      /* __STDC_LIMIT_MACROS and __STDC_CONSTANT_MACROS are mentioned
+	 in the C standard, as something that one must use in C++.
+	 However DR#593 and C++11 indicate that they play no role in C++.
+	 We special-case them anyway.  */
+      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_LIMIT_MACROS")
+      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_CONSTANT_MACROS"))
+    node->flags |= NODE_WARN;
+
+  /* If user defines one of the conditional macros, remove the
+     conditional flag */
+  node->flags &= ~NODE_CONDITIONAL;
+
+  return true;
+}
+
+
+
+//--------------------------------------------------------------------------------
+// similar to _cpp_create_definition, though evaluates the body first and uses
+// paren balancing rather than requiring a single line definition.
+
+bool
+_cpp_create_assign(cpp_reader *pfile, cpp_hashnode *node){
   cpp_macro *macro;
 
   if (CPP_OPTION (pfile, traditional))
@@ -4191,124 +4529,3 @@ _assign_handler(cpp_reader *pfile, cpp_hashnode *node){
 
 
 
-
-#if 0
-static cpp_token *
-assign_name_argument(cpp_reader *pfile){
-  const cpp_token *name_token = cpp_get_token(pfile);
-
-  cpp_warning_with_line(
-     pfile
-    ,CPP_W_NONE
-    ,name_token->src_loc
-    ,0
-    ,"for debug, assign name is being set to: %.*s"
-    ,name_token->val.str.len
-    ,name_token->val.str.text
-  );
-
-  if(name_token->type != CPP_NAME){
-    cpp_error_with_line(
-       pfile
-      ,CPP_DL_ERROR
-      ,name_token->src_loc
-      ,0
-      ,"First argument to #assign must be a macro name, instead found: %.*s"
-      ,name_token->val.str.len
-      ,name_token->val.str.text
-    );
-    return NULL;
-  }
-
-  // export this into the wider context
-  cpp_token *copy = (cpp_token *) _cpp_reserve_room(pfile ,0 ,sizeof(cpp_token));
-  *copy = *name_token;
-  return copy;
-}
-
-void assign_handler(cpp_reader *pfile){
-
-  // parse name argument
-  const cpp_token *name_token = assign_name_argument(pfile);
-  if(!name_token) return; 
-
-  // create macro
-  cpp_macro *macro = _cpp_new_macro(
-     pfile
-    ,cmk_macro
-    ,_cpp_reserve_room(pfile ,0 ,sizeof(cpp_macro))
-  );
-
-  macro->fun_like = 0;
-  macro->paramc   = 0;
-  macro->variadic = 0;
-  macro->count    = 1;
-  macro->used     = 1;
-
-  // fill value
-  cpp_token *value_token = &macro->exp.tokens[0];
-  value_token->type         = CPP_NUMBER;
-  value_token->val.str.text = (const unsigned char *) "42";
-  value_token->val.str.len  = 2;
-  value_token->flags        = 0;
-
-  // enter the definition into the symbol table
-  cpp_hashnode *node = name_token->val.node.node;
-  node->type        = NT_USER_MACRO;
-  node->value.macro = macro;
-
-  _cpp_mark_macro_used(node);
-  cpp_warning(pfile ,CPP_W_NONE ,"Assigned macro %s as 42" ,NODE_NAME(node));
-}
-
-#endif
-
-#if 0
-static cpp_hashnode *
-assign_name_argument(cpp_reader *pfile){
-  cpp_hashnode *node = lex_macro_node(pfile);
-
-  if( !node || cpp_ide_is_keyword(node) ){
-    cpp_error(pfile ,CPP_DL_ERROR ,"First argument to #assign must be a macro name");
-    return NULL;
-  }
-
-  cpp_warning(pfile ,CPP_W_NONE ,"for debug, assign name is being set to: %s", NODE_NAME(node));
-  return node;
-}
-
-void
-assign_handler(cpp_reader *pfile){
-
-  cpp_hashnode *node = assign_name_argument(pfile);
-  if( !node )
-    return;  // error already reported
-
-  // create macro
-  cpp_macro *macro = _cpp_new_macro(
-     pfile
-    ,cmk_macro
-    ,_cpp_reserve_room(pfile ,0 ,sizeof(cpp_macro))
-  );
-
-  macro->fun_like = 0;
-  macro->paramc   = 0;
-  macro->variadic = 0;
-  macro->count    = 1;
-  macro->used     = 1;
-
-  // fill value
-  cpp_token *value_token = &macro->exp.tokens[0];
-  value_token->type         = CPP_NUMBER;
-  value_token->val.str.text = (const unsigned char *) "42";
-  value_token->val.str.len  = 2;
-  value_token->flags        = 0;
-
-  // install macro
-  node->type        = NT_USER_MACRO;
-  node->value.macro = macro;
-
-  _cpp_mark_macro_used(node);
-  cpp_warning(pfile ,CPP_W_NONE ,"Assigned macro %s as 42" ,NODE_NAME(node));
-}
-#endif
