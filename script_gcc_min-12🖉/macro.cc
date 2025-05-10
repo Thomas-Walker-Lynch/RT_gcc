@@ -4138,7 +4138,7 @@ cpp_macro_definition (cpp_reader *pfile, cpp_hashnode *node,
 // see directives.cc
 extern const char *cpp_token_as_text(const cpp_token *token);
 
-// a helper function for probing where we are at in the parse
+// a helper function for probing where the parser thinks it is in the source
 void
 debug_peek_token (cpp_reader *pfile)
 {
@@ -4156,22 +4156,48 @@ debug_peek_token (cpp_reader *pfile)
   _cpp_backup_tokens(pfile, 1);
 }
 
+// collects the body of a #define or related directive 
 static bool
-collect_macro_body_tokens (cpp_reader *pfile,
-                           cpp_macro *macro,
-                           unsigned int *num_extra_tokens_out,
-                           const char *paste_op_error_msg)
-{
+collect_body_tokens(
+  cpp_reader *pfile
+  ,cpp_macro *macro
+  ,unsigned int *num_extra_tokens_out
+  ,const char *paste_op_error_msg
+  ,bool paren_matching
+){
   bool following_paste_op = false;
   unsigned int num_extra_tokens = 0;
+  int paren_depth;
+  cpp_token *token;
+
+  if(paren_matching){
+    token = _cpp_lex_direct(pfile);
+    if(token->type != CPP_OPEN_PAREN){
+      cpp_error_with_line(
+        pfile
+        ,CPP_DL_ERROR
+        ,token->src_loc
+        ,0
+        ,"expected body delimiter '(', but found: %s"
+        ,cpp_token_as_text(token)
+      );
+      fprintf(stderr, "exiting collect_body_tokens did not find opening paren\n");
+      return false;
+    }
+    paren_depth = 1;
+    fprintf( stderr, "entry paren_depth: %d\n", paren_depth);
+  }
 
   for (vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);; )
     {
-      cpp_token *token = NULL;
-
+      // gets a token
+      //   first parses token onto `macro->exp.tokens[macro->count]`
+      //   then pulls the token off of `macro->exp.tokens[macro->count]`
       macro = lex_expansion_token(pfile, macro);
       token = &macro->exp.tokens[macro->count++];
+      fprintf( stderr, "top of loop, read token %s\n", cpp_token_as_text(token) );
 
+      // recognize macro args, give them type CPP_MACRO_ARG
       if (macro->count > 1 && token[-1].type == CPP_HASH && macro->fun_like)
         {
           if (token->type == CPP_MACRO_ARG
@@ -4193,27 +4219,57 @@ collect_macro_body_tokens (cpp_reader *pfile,
             {
               cpp_error(pfile, CPP_DL_ERROR,
                         "'#' is not followed by a macro parameter");
+              fprintf(stderr, "exiting collect_body_tokens not a macro arg and language is not ASM\n");
               return false;
             }
         }
 
-      if (token->type == CPP_EOF)
-        {
-          if (following_paste_op)
-            {
-              cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
-              return false;
-            }
-          if (!vaopt_tracker.completed())
-            return false;
-          break;
+      // parentheses matching overhead
+      if(paren_matching){
+        if( token->type == CPP_OPEN_PAREN || token->type == CPP_CLOSE_PAREN){
+          if(token->type == CPP_OPEN_PAREN) paren_depth++;
+          if(token->type == CPP_CLOSE_PAREN) paren_depth--;
+          fprintf( stderr, "new paren_depth: %d\n", paren_depth);
         }
+
+        if(token->type == CPP_EOF){
+          fprintf(stderr, "Found CPP_EOF at paren depth %d\n", paren_depth);
+          macro->count--;
+          if(!_cpp_get_fresh_line(pfile)){
+            fprintf(stderr, "exiting collect_body_tokens _cpp_get_fresh_line failed\n");
+            return false;
+          }
+          fprintf(stderr, "Found CPP_EOF at depth %d read new line now continuing loop \n", paren_depth);
+          continue;
+        }
+      }
+
+      // exit loop at the end of the macro body
+      if( 
+        paren_matching && paren_depth == 0 
+        || !paren_matching && token->type == CPP_EOF
+      ){
+        fprintf(stderr, "exiting macro body collect loops\n");
+        if(following_paste_op){
+          cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+          fprintf( stderr, "exiting collect_body_tokens due to following_past_op\n");
+          return false;
+        }
+        if( !vaopt_tracker.completed() ){
+          fprintf( stderr, "exiting collect_body_tokens due to !vaopt_tracker.completed()\n");
+          return false;
+        }
+        *num_extra_tokens_out = num_extra_tokens;
+        macro->count--; // drop the terminator
+        return true;
+      }
 
       if (token->type == CPP_PASTE)
         {
           if (macro->count == 1)
             {
               cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+              fprintf( stderr, "exiting collect_body_tokens paste event\n");
               return false;
             }
 
@@ -4233,17 +4289,17 @@ collect_macro_body_tokens (cpp_reader *pfile,
             }
           following_paste_op = true;
         }
-      else
+      else{
         following_paste_op = false;
+      }
 
-      if (vaopt_tracker.update(token) == vaopt_state::ERROR)
+      if (vaopt_tracker.update(token) == vaopt_state::ERROR){
+        fprintf( stderr, "exiting collect_body_token due to vaopt_tracker.update(token) == vaopt_state::ERROR\n");
         return false;
+      }
     }
 
-  *num_extra_tokens_out = num_extra_tokens;
-  return true;
 }
-
 
 //--------------------------------------------------------------------------------
 // for `#macro` directive
@@ -4270,6 +4326,9 @@ create_iso_macro (cpp_reader *pfile)
   bool varadic = false;
   bool ok = false;
   cpp_macro *macro = NULL;
+
+int saved_in_directive = pfile->state.in_directive;
+int saved = pfile->keep_tokens;
 
   /* 
     -Saves token allocation address held in pfile->cur_token.
@@ -4330,15 +4389,34 @@ create_iso_macro (cpp_reader *pfile)
   macro->parm.params = params;
   macro->fun_like = true;
 
-  // collects from pfile the tokens that constitute the macro body
-  if (!collect_macro_body_tokens(pfile, macro, &num_extra_tokens, paste_op_error_msg))
-    goto out;
+  /* 
+    Collect the macro body tokens.
+    A #macro () body is delineated by parentheses
+  */
+
+
+pfile->state.in_directive = 0;  // allow fresh lines
+pfile->keep_tokens = 1;
+
+  // collects the remaining body tokens
+  if(
+    !collect_body_tokens(
+      pfile 
+      ,macro 
+      ,&num_extra_tokens 
+      ,paste_op_error_msg 
+      ,true
+    )
+  ) goto out;
+
+pfile->keep_tokens = saved;
+pfile->state.in_directive = saved_in_directive;  // restore
+
+
+
 
   // At this point, even if the body parse fails, we will say we made a macro. I'm not sure why as we haven't commited it yet, but this is what is in the code. Apparently we throw away the macro if the body does not parse.
   ok = true;
-
-  /* Don't count the CPP_EOF.  */
-  macro->count--;
 
   // commit the cpp struct to memory
   // the struct reserves space for one token, the others run off the end

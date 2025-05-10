@@ -1,0 +1,230 @@
+#+TITLE: GCC libcpp Lexer: Structure, Usage, and Extension
+#+AUTHOR: Caelus (OpenAI) and Thomas Walker Lynch
+#+DATE: 2025-05-09
+
+* Overview
+The C preprocessor lexer (`lex.cc`) in GCC's `libcpp` is responsible for scanning raw source characters and emitting `cpp_token` structures. It is Unicode-aware, macro-sensitive, context-tracking, and supports multiple levels of token buffering. This lexer is both a general-purpose lexical analyzer and a specialized component for preprocessing.
+
+This document provides:
+1. An architectural overview of how the lexer operates.
+2. Guidance on how to interface with it (i.e., how to invoke, initialize, and consume it).
+3. Examples demonstrating token flow and useful idioms.
+
+* 1. About the Lexer
+
+** 1.1 Services Provided
+The lexer transforms a stream of characters into a stream of `cpp_token`s. It performs:
+- UCN (Universal Character Name) expansion.
+- Unicode normalization for identifiers.
+- Detection of digraphs/trigraphs.
+- Skipping of whitespace and comments.
+- Classification into token types (`cpp_ttype`).
+- Optional macro expansion (via higher-level coordination with macro subsystem).
+
+The function `_cpp_lex_token()` is the main entry point for lexing one token from the input stream.
+
+** 1.2 Token Types and Structures
+Tokens are represented as `struct cpp_token`, which contains:
+- `type`: token kind (from `cpp_ttype`)
+- `val`: a union holding the value (e.g. number, string, identifier)
+- `flags`: indicators such as `PREV_WHITE` or `DIGRAPH`
+- `src_loc`: location for diagnostics
+- `spelling`: optional cached spelling (may be recomputed)
+
+Auxiliary structures include:
+- `cpp_hashnode`: interned identifiers and macro names
+- `normalize_state`: for handling normalization and BiDi context
+- `_cpp_buff`: dynamic buffers used for temporary token storage
+
+** 1.3 Unicode and Normalization
+Lexer supports bidirectional Unicode enforcement using:
+- `context`, `normalize_state`: track BiDi embeddings and UCN states
+- `on_char`, `on_close`, `maybe_warn_bidi_on_close`: enforce structure
+
+** 1.4 Vectorized Fast Path
+Several functions (e.g. `search_line_sse2`) accelerate scanning on x86 via SIMD. These are conditionally invoked from `search_line_fast` when alignment and CPU features allow.
+
+** 1.5 Token Buffers and Pools
+Token buffers are managed using `_cpp_get_buff`, `_cpp_extend_buff`, `_cpp_commit_buff`, and `_cpp_release_buff`. These form a scratch/reuse pool and reduce allocations in macro processing or lexing multiple tokens rapidly.
+
+* 2. How to Use the Lexer API
+
+** 2.1 Initialization
+Before lexing, the preprocessor must initialize its state:
+
+#+begin_src c
+cpp_reader *pfile = cpp_create_reader(GTK_TESTING, NULL, NULL);
+_cpp_init_lexer(pfile);
+_cpp_init_tokenrun(pfile);
+#+end_src
+
+** 2.2 Lexing Tokens
+To retrieve the next token:
+
+#+begin_src c
+const cpp_token *token = _cpp_lex_token(pfile);
+#+end_src
+
+For directive-specific parsing (no macro expansion):
+
+#+begin_src c
+cpp_token *token = _cpp_lex_direct(pfile);
+#+end_src
+
+** 2.3 Token Inspection
+Each token has type and value fields:
+
+#+begin_src c
+if (token->type == CPP_NUMBER) {
+  printf("Numeric token: %s\n", cpp_spell_token(pfile, token));
+}
+#+end_src
+
+** 2.4 Identifier Handling
+Lex identifiers directly (e.g., for macro lookup):
+
+#+begin_src c
+cpp_hashnode *node = _cpp_lex_identifier(pfile);
+if (cpp_macro_p(node)) {
+  // Node is a macro
+}
+#+end_src
+
+** 2.5 Stringification and Output
+To spell a token or output lines:
+
+#+begin_src c
+unsigned char *text = cpp_token_as_text(pfile, token);
+cpp_output_token(pfile, token, stdout);
+#+end_src
+
+* 3. Examples and Advanced Use
+
+** 3.1 Simple Token Stream
+Lex a stream from input and print token types:
+
+#+begin_src c
+while (true) {
+  const cpp_token *tok = _cpp_lex_token(pfile);
+  if (tok->type == CPP_EOF)
+    break;
+  printf("Token: %s\n", cpp_type2name(tok->type));
+}
+#+end_src
+
+** 3.2 Peeking and Lookahead
+Use `cpp_peek_token` to look ahead:
+
+#+begin_src c
+const cpp_token *next = cpp_peek_token(pfile);
+if (next->type == CPP_OPEN_PAREN)
+  printf("Function call?\n");
+#+end_src
+
+** 3.3 Handling Unicode Identifiers
+To support identifiers with UCNs:
+
+#+begin_src c
+cpp_hashnode *ident = _cpp_lex_identifier(pfile);
+const uchar *spell = _cpp_spell_ident_ucns(pfile, ident);
+printf("Normalized: %s\n", spell);
+#+end_src
+
+** 3.4 Example: Skipping Comments
+Use `_cpp_skip_block_comment` or `skip_line_comment`:
+
+#+begin_src c
+bool changed_line = _cpp_skip_block_comment(pfile);
+if (changed_line)
+  _cpp_clean_line(pfile);
+#+end_src
+
+** 3.5 Buffer Usage Examples
+
+*** 3.5.1 Allocate and Fill a Temporary Buffer
+Use `_cpp_get_buff` to allocate a scratch buffer. Always check and ensure space before writing. Then commit the buffer and retrieve its contents.
+
+#+begin_src c
+_cpp_buff *buff = _cpp_get_buff(pfile);
+size_t len = 5;  // Number of bytes to write
+
+// Ensure buffer has enough room
+if ((size_t)(buff->limit - buff->cur) < len)
+  _cpp_extend_buff(pfile, &buff);
+
+// Write data safely
+memcpy(buff->cur, "hello", len);
+buff->cur += len;
+
+// Commit buffer and retrieve stable pointer
+unsigned char *data = (unsigned char *) _cpp_commit_buff(pfile, buff, len);
+printf("Buffer contents: %.*s\n", (int)len, data);
+#+end_src
+*** 3.5.2 Extend a Buffer Dynamically
+Extend a buffer when you exceed its original size.
+
+#+begin_src c
+_cpp_buff *buff = _cpp_get_buff(pfile);
+
+// Simulate a long write
+for (int i = 0; i < 300; ++i) {
+  if ((size_t)(buff->limit - buff->cur) < 1) {
+    _cpp_extend_buff(pfile, &buff);
+  }
+  *buff->cur++ = 'A';
+}
+
+unsigned char *text = (unsigned char *) _cpp_commit_buff(pfile, buff, 300);
+printf("Expanded buffer: %.*s\n", 10, text); // First 10 chars
+#+end_src
+
+*** 3.5.3 Use Buffers in Token Construction
+Construct a macro expansion or synthetic token string.
+
+#+begin_src c
+_cpp_buff *buff = _cpp_get_buff(pfile);
+buff->cur = stpcpy((char *)buff->cur, "MY_MACRO(");
+buff->cur = stpcpy((char *)buff->cur, "123 + 456");
+*buff->cur++ = ')';
+
+unsigned char *macro_text = (unsigned char *) _cpp_commit_buff(pfile, buff,
+                                          buff->cur - buff->base);
+printf("Token string: %s\n", macro_text);
+#+end_src
+
+*** 3.5.4 Releasing a Buffer
+After using a buffer temporarily (e.g., in lookahead), release it.
+
+#+begin_src c
+_cpp_buff *buff = _cpp_get_buff(pfile);
+// ... use the buffer ...
+_cpp_release_buff(pfile, buff);
+#+end_src
+
+*** 3.5.5 Commit and Reuse
+After committing a buffer, you may allocate another for reuse:
+
+#+begin_src c
+unsigned char *first = (unsigned char *) _cpp_commit_buff(pfile, buff, len);
+_cpp_buff *next = _cpp_get_buff(pfile);
+// next->base points to fresh or recycled memory
+#+end_src
+
+* 4. Notes on Extension
+
+- You may insert a new directive (e.g., `#assign`) by defining it in `directives.cc` and adding handler logic in `macro.cc` or your own file.
+- If you want to extend the lexer for new token kinds, you must:
+  - Add a new `cpp_ttype` enum value.
+  - Extend `_cpp_lex_token` or `lex_string` to recognize and classify it.
+  - Update `cpp_type2name` and spelling functions.
+
+* 5. Recommended Reading
+- `libcpp/include/cpp-id-data.h`: For macro flags and token identifiers
+- `libcpp/lex.cc`: Lexer core implementation
+- `libcpp/directives.cc`: Directive parsing
+- `libcpp/macro.cc`: Macro expansion
+- `libcpp/line-map.cc`: Location tracking and diagnostics
+
+  
+
+
