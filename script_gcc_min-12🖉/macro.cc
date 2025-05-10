@@ -4157,8 +4157,58 @@ debug_peek_token (cpp_reader *pfile)
 }
 
 // collects the body of a #define or related directive 
-static bool
-collect_body_tokens(
+typedef enum collect_body_tokens_return {
+  CBT_OK = 0,                        // Normal successful collection
+
+  CBT_ERR_EXPECTED_OPEN_PAREN,      // Failed to find expected opening '('
+  CBT_ERR_UNEXPECTED_EOF,           // Hit real EOF before matching ')'
+  CBT_ERR_PASTE_AT_END,             // Trailing '##' paste operator
+  CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG, // '#' not followed by macro parameter
+  CBT_ERR_VAOPT_STATE_INVALID,      // __VA_OPT__ or variadic tracking error
+  CBT_ERR_EOF_FETCH_FAILED,         // Failed to fetch next line after EOF
+  CBT_ERR_UNKNOWN                   // Fallback error (should not occur)
+} collect_body_tokens_return;
+
+void
+debug_collect_body_tokens_status(enum collect_body_tokens_return status)
+{
+#if 1
+  const char *message = NULL;
+  switch (status)
+    {
+    case CBT_OK:
+      message = "collect_body_tokens: completed successfully.";
+      break;
+    case CBT_ERR_EXPECTED_OPEN_PAREN:
+      message = "collect_body_tokens: expected opening '(' but did not find it.";
+      break;
+    case CBT_ERR_UNEXPECTED_EOF:
+      message = "collect_body_tokens: unexpected EOF before closing ')'.";
+      break;
+    case CBT_ERR_PASTE_AT_END:
+      message = "collect_body_tokens: paste operator '##' appeared at the beginning or end of macro body.";
+      break;
+    case CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG:
+      message = "collect_body_tokens: '#' was not followed by a valid macro parameter.";
+      break;
+    case CBT_ERR_VAOPT_STATE_INVALID:
+      message = "collect_body_tokens: invalid __VA_OPT__ tracking state.";
+      break;
+    case CBT_ERR_EOF_FETCH_FAILED:
+      message = "collect_body_tokens: _cpp_get_fresh_line() failed to fetch next line.";
+      break;
+    case CBT_ERR_UNKNOWN:
+    default:
+      message = "collect_body_tokens: unknown or unhandled error.";
+      break;
+    }
+  fprintf(stderr, "%s\n", message);
+#endif
+}
+
+
+static enum collect_body_tokens_return
+collect_body_tokens_1(
   cpp_reader *pfile
   ,cpp_macro *macro
   ,unsigned int *num_extra_tokens_out
@@ -4167,26 +4217,8 @@ collect_body_tokens(
 ){
   bool following_paste_op = false;
   unsigned int num_extra_tokens = 0;
-  int paren_depth;
+  int paren_depth = 1; 
   cpp_token *token;
-
-  if(paren_matching){
-    token = _cpp_lex_direct(pfile);
-    if(token->type != CPP_OPEN_PAREN){
-      cpp_error_with_line(
-        pfile
-        ,CPP_DL_ERROR
-        ,token->src_loc
-        ,0
-        ,"expected body delimiter '(', but found: %s"
-        ,cpp_token_as_text(token)
-      );
-      fprintf(stderr, "exiting collect_body_tokens did not find opening paren\n");
-      return false;
-    }
-    paren_depth = 1;
-    fprintf( stderr, "entry paren_depth: %d\n", paren_depth);
-  }
 
   for (vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);; )
     {
@@ -4219,8 +4251,7 @@ collect_body_tokens(
             {
               cpp_error(pfile, CPP_DL_ERROR,
                         "'#' is not followed by a macro parameter");
-              fprintf(stderr, "exiting collect_body_tokens not a macro arg and language is not ASM\n");
-              return false;
+              return CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG;
             }
         }
 
@@ -4236,8 +4267,7 @@ collect_body_tokens(
           fprintf(stderr, "Found CPP_EOF at paren depth %d\n", paren_depth);
           macro->count--;
           if(!_cpp_get_fresh_line(pfile)){
-            fprintf(stderr, "exiting collect_body_tokens _cpp_get_fresh_line failed\n");
-            return false;
+            return CBT_ERR_EOF_FETCH_FAILED;
           }
           fprintf(stderr, "Found CPP_EOF at depth %d read new line now continuing loop \n", paren_depth);
           continue;
@@ -4249,19 +4279,16 @@ collect_body_tokens(
         paren_matching && paren_depth == 0 
         || !paren_matching && token->type == CPP_EOF
       ){
-        fprintf(stderr, "exiting macro body collect loops\n");
         if(following_paste_op){
           cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
-          fprintf( stderr, "exiting collect_body_tokens due to following_past_op\n");
-          return false;
+          return CBT_ERR_PASTE_AT_END;
         }
         if( !vaopt_tracker.completed() ){
-          fprintf( stderr, "exiting collect_body_tokens due to !vaopt_tracker.completed()\n");
-          return false;
+          return CBT_ERR_VAOPT_STATE_INVALID;
         }
         *num_extra_tokens_out = num_extra_tokens;
         macro->count--; // drop the terminator
-        return true;
+        return CBT_OK;
       }
 
       if (token->type == CPP_PASTE)
@@ -4269,8 +4296,7 @@ collect_body_tokens(
           if (macro->count == 1)
             {
               cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
-              fprintf( stderr, "exiting collect_body_tokens paste event\n");
-              return false;
+              return CBT_ERR_PASTE_AT_END; // the font end of the buffer
             }
 
           if (following_paste_op)
@@ -4294,12 +4320,69 @@ collect_body_tokens(
       }
 
       if (vaopt_tracker.update(token) == vaopt_state::ERROR){
-        fprintf( stderr, "exiting collect_body_token due to vaopt_tracker.update(token) == vaopt_state::ERROR\n");
-        return false;
+        return CBT_ERR_VAOPT_STATE_INVALID;
       }
     }
 
 }
+
+static bool
+collect_body_tokens(
+  cpp_reader *pfile,
+  cpp_macro *macro,
+  unsigned int *num_extra_tokens_out,
+  const char *paste_op_error_msg,
+  bool paren_matching
+){
+  int saved_keep_tokens = pfile->keep_tokens;
+  int saved_in_directive = pfile->state.in_directive;
+  cpp_token *token;
+
+  if (paren_matching)
+    {
+      // the next token must be the opening paren
+      token = _cpp_lex_direct(pfile);
+      if(token->type != CPP_OPEN_PAREN){
+        cpp_error_with_line(
+          pfile
+          ,CPP_DL_ERROR
+          ,token->src_loc
+          ,0
+          ,"expected body delimiter '(', but found: %s"
+          ,cpp_token_as_text(token)
+        );
+        debug_collect_body_tokens_status(CBT_ERR_EXPECTED_OPEN_PAREN);
+        return false;
+      }
+
+      // allow a multiple line body
+      pfile->keep_tokens = 1;
+      pfile->state.in_directive = 0;
+    }
+
+  collect_body_tokens_return status = collect_body_tokens_1(
+      pfile
+      ,macro
+      ,num_extra_tokens_out
+      ,paste_op_error_msg
+      ,paren_matching
+    );
+                          
+  if (paren_matching)
+    {
+      pfile->keep_tokens = saved_keep_tokens;
+      pfile->state.in_directive = saved_in_directive;
+    }
+
+  // print exit status
+  // note single point of countrol at top of debug_collect_body_tokens_status()
+  debug_collect_body_tokens_status(status);  
+
+  return status == CBT_OK;
+}
+
+
+
 
 //--------------------------------------------------------------------------------
 // for `#macro` directive
