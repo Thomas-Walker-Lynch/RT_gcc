@@ -2663,12 +2663,14 @@ ensure_expanded_arg_room (cpp_reader *pfile, macro_arg *arg,
     }
 }
 
-/* Expand an argument ARG before replacing parameters in a
-   function-like macro.  This works by pushing a context with the
-   argument's tokens, and then expanding that into a temporary buffer
-   as if it were a normal part of the token stream.  collect_args()
-   has terminated the argument's tokens with a CPP_EOF so that we know
-   when we have fully expanded the argument.  */
+/* 
+  Expand an argument ARG before replacing parameters in a
+  function-like macro.  This works by pushing a context with the
+  argument's tokens, and then expanding that into a temporary buffer
+  as if it were a normal part of the token stream.  collect_args()
+  has terminated the argument's tokens with a CPP_EOF so that we know
+  when we have fully expanded the argument. 
+ */
 static void
 expand_arg (cpp_reader *pfile, macro_arg *arg)
 {
@@ -4137,6 +4139,7 @@ cpp_macro_definition (cpp_reader *pfile, cpp_hashnode *node,
 
 // see directives.cc
 extern const char *cpp_token_as_text(const cpp_token *token);
+extern void print_token_list (const cpp_token *tokens, size_t count);
 
 // a helper function for probing where the parser thinks it is in the source
 void
@@ -4155,6 +4158,11 @@ debug_peek_token (cpp_reader *pfile)
 
   _cpp_backup_tokens(pfile, 1);
 }
+
+
+/*--------------------------------------------------------------------------------
+  Collect body tokens.
+*/
 
 // collects the body of a #define or related directive 
 typedef enum collect_body_tokens_return {
@@ -4205,7 +4213,6 @@ debug_collect_body_tokens_status(enum collect_body_tokens_return status)
   fprintf(stderr, "%s\n", message);
 #endif
 }
-
 
 static enum collect_body_tokens_return
 collect_body_tokens_1(
@@ -4274,7 +4281,7 @@ collect_body_tokens_1(
         }
       }
 
-      // exit loop at the end of the macro body
+      // Determine if routine has lexed the final macro body token and should exit.
       if( 
         paren_matching && paren_depth == 0 
         || !paren_matching && token->type == CPP_EOF
@@ -4326,6 +4333,12 @@ collect_body_tokens_1(
 
 }
 
+/*
+  Given a cpp_macro and cpp_reader reference.
+  Returns the body tokens in `macro->exp.tokens`.
+
+  The macro need not have been committed.
+*/
 static bool
 collect_body_tokens(
   cpp_reader *pfile,
@@ -4381,22 +4394,18 @@ collect_body_tokens(
   return status == CBT_OK;
 }
 
+/*--------------------------------------------------------------------------------
+  This code was derived from create_iso_defined().
+  Given pfile returns a macro definition.
 
+  #macro name (parameter [,parameter] ...) (body_expr)
+  #macro name () (body_expr)
 
+  like _cpp_create_definition though uses paren blancing instead or requiring a single line definition.
 
-//--------------------------------------------------------------------------------
-// for `#macro` directive
-/*
-   #macro NAME ( [optional parameters] ) (body)
-   like _cpp_create_definition though uses paren blancing instead or requiring a single line definition.
-*/
-
-/*
   the cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {`
   it has a flexible array field in a union as a last member: cpp_token tokens[1];
 */
-
-// derived from create_iso_defined
 static cpp_macro *
 create_iso_macro (cpp_reader *pfile)
 {
@@ -4410,144 +4419,128 @@ create_iso_macro (cpp_reader *pfile)
   bool ok = false;
   cpp_macro *macro = NULL;
 
-int saved_in_directive = pfile->state.in_directive;
-int saved = pfile->keep_tokens;
-
-  /* 
-    -Saves token allocation address held in pfile->cur_token.
-    -Gives a new token allocation address to pfile->cur_token, that of cpp_token first.
-
-    Neither `first` nor `saved_cur_token` are referred to again, but as I don't have a
-    full test bench, I will leave this as I found it. Perhaps in the future if someone
-    understands what this is for, they can replace this comment. -Thomas
-
-    -Parses out a token called 'token'. 'token' does get used.
-  */
-  cpp_token first;
-  cpp_token *saved_cur_token = pfile->cur_token;
-  pfile->cur_token = &first;
-  cpp_token *token = _cpp_lex_direct (pfile);
-  pfile->cur_token = saved_cur_token;
-
-  /* 
-     -For #define if the next token is a space, then it is not a function macro.
-     -For #macro it is always a function macro, perhaps with an empty param list.
-  */
-  if(token->type != CPP_OPEN_PAREN){
-    cpp_error_with_line(
-      pfile
-      ,CPP_DL_ERROR
-      ,token->src_loc
-      ,0
-      ,"expected '(' to open arguments list, but found: %s"
-      ,cpp_token_as_text(token)
-    );
-    goto out;
-  }
-
   /*
-    - returns parameter list for a function macro, or NULL
-    - returns via &arg count of parameters
-    - returns via &arg the varadic flag
+    At this point the name has already been parsed. The next token will be the opening paren of the parameter list. 
 
-    after parse_parms runs, the next token returned by pfile will be subsequent to the parameter list, e.g.:
-       7 |   #macro Q(f ,...) printf(f ,__VA_ARGS__)
-         |                    ^~~~~~
+    The `#dmacro` directive always has a parameter list. (If this were a `#define` the parser
+    would be looking for a space or a paren to determin if this was a function macro.)
     
+    After this six lines ofs code, the next token will be in the variable 'token'.
+
+    Neither `first` nor `saved_cur_token` are referred to again, and I don't really understand the dance here. Apparently we must give pfile->cur_token an allocation to point at.
   */
-  if( !parse_params(pfile, &nparms, &varadic) ) goto out;
+    cpp_token first;
+    cpp_token *saved_cur_token = pfile->cur_token;
+    pfile->cur_token = &first;
+    cpp_token *token = _cpp_lex_direct (pfile);
+    pfile->cur_token = saved_cur_token;
 
-  // finalizes the reserved room, otherwise it will be reused on the next reserve room call.
-  params = (cpp_hashnode **)_cpp_commit_buff( pfile, sizeof (cpp_hashnode *) * nparms );
-  token = NULL;
-
-  // This reserves room for a new macro struct. A macro struct is variable size, the actual size will be worked out when the memory is committed.
-  macro = _cpp_new_macro(
-    pfile
-    ,cmk_macro
-    ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
-  );
-  macro->variadic = varadic;
-  macro->paramc = nparms;
-  macro->parm.params = params;
-  macro->fun_like = true;
-
-  /* 
-    Collect the macro body tokens.
-    A #macro () body is delineated by parentheses
-  */
-
-
-pfile->state.in_directive = 0;  // allow fresh lines
-pfile->keep_tokens = 1;
-
-  // collects the remaining body tokens
-  if(
-    !collect_body_tokens(
-      pfile 
-      ,macro 
-      ,&num_extra_tokens 
-      ,paste_op_error_msg 
-      ,true
-    )
-  ) goto out;
-
-pfile->keep_tokens = saved;
-pfile->state.in_directive = saved_in_directive;  // restore
-
-
-
-
-  // At this point, even if the body parse fails, we will say we made a macro. I'm not sure why as we haven't commited it yet, but this is what is in the code. Apparently we throw away the macro if the body does not parse.
-  ok = true;
-
-  // commit the cpp struct to memory
-  // the struct reserves space for one token, the others run off the end
-  macro = (cpp_macro *)_cpp_commit_buff(
-    pfile
-   ,sizeof (cpp_macro) - sizeof (cpp_token) + sizeof (cpp_token) * macro->count
-  );
-
-
-  /*
-    It might be that the first token of the macro body was preceded by white space,so
-    the white space flag is set. However, upon expansion, there might not be a white
-    space before said token, so the following code clears the flag.
-  */
-  if (macro->count)
-    macro->exp.tokens[0].flags &= ~PREV_WHITE;
-
-  /*
-    Identifies consecutive ## tokens (a.k.a. CPP_PASTE) that were invalid or ambiguous,
-
-    Removes them from the main macro body,
-
-    Stashes them at the end of the tokens[] array in the same memory,
-
-    Sets macro->extra_tokens = 1 to signal their presence.
-  */
-  if (num_extra_tokens)
-    {
-      /* Place second and subsequent ## or %:%: tokens in sequences of
-	 consecutive such tokens at the end of the list to preserve
-	 information about where they appear, how they are spelt and
-	 whether they are preceded by whitespace without otherwise
-	 interfering with macro expansion.   Remember, this is
-	 extremely rare, so efficiency is not a priority.  */
-      cpp_token *temp = (cpp_token *)_cpp_reserve_room
-	(pfile, 0, num_extra_tokens * sizeof (cpp_token));
-      unsigned extra_ix = 0, norm_ix = 0;
-      cpp_token *exp = macro->exp.tokens;
-      for (unsigned ix = 0; ix != macro->count; ix++)
-	if (exp[ix].type == CPP_PASTE)
-	  temp[extra_ix++] = exp[ix];
-	else
-	  exp[norm_ix++] = exp[ix];
-      memcpy (&exp[norm_ix], temp, num_extra_tokens * sizeof (cpp_token));
-
-      /* Record there are extra tokens.  */
-      macro->extra_tokens = 1;
+  // parameter list parsing
+  //   
+    if(token->type != CPP_OPEN_PAREN){
+      cpp_error_with_line(
+        pfile
+        ,CPP_DL_ERROR
+        ,token->src_loc
+        ,0
+        ,"expected '(' to open arguments list, but found: %s"
+        ,cpp_token_as_text(token)
+      );
+      goto out;
     }
+
+    /*
+      - returns parameter list for a function macro, or NULL
+      - returns via &arg count of parameters
+      - returns via &arg the varadic flag
+
+      after parse_parms runs, the next token returned by pfile will be subsequent to the parameter list, e.g.:
+         7 |   #macro Q(f ,...) printf(f ,__VA_ARGS__)
+           |                    ^~~~~~
+
+    */
+    if( !parse_params(pfile, &nparms, &varadic) ) goto out;
+
+    // finalizes the reserved room, otherwise it will be reused on the next reserve room call.
+    params = (cpp_hashnode **)_cpp_commit_buff( pfile, sizeof (cpp_hashnode *) * nparms );
+    token = NULL;
+
+  // macro declaration
+  //   A macro struct is variable size, due to a trailing token list, so the memory
+  //   reservations size will be adjusted when this is committed.
+  //
+    macro = _cpp_new_macro(
+      pfile
+      ,cmk_macro
+      ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
+    );
+    macro->variadic = varadic;
+    macro->paramc = nparms;
+    macro->parm.params = params;
+    macro->fun_like = true;
+
+  // parse macro body 
+  //   A `#macro` body is delineated by parentheses
+  //
+    if(
+      !collect_body_tokens(
+        pfile 
+        ,macro 
+        ,&num_extra_tokens 
+        ,paste_op_error_msg 
+        ,true // parenthesis delineated
+      )
+    ) goto out;
+
+  // ok time to commit the macro
+  //
+    ok = true;
+    macro = (cpp_macro *)_cpp_commit_buff(
+      pfile
+     ,sizeof (cpp_macro) - sizeof (cpp_token) + sizeof (cpp_token) * macro->count
+    );
+
+  // some end cases we must clean up
+  //
+    /*
+      It might be that the first token of the macro body was preceded by white space,so
+      the white space flag is set. However, upon expansion, there might not be a white
+      space before said token, so the following code clears the flag.
+    */
+    if (macro->count)
+      macro->exp.tokens[0].flags &= ~PREV_WHITE;
+
+    /*
+      Identifies consecutive ## tokens (a.k.a. CPP_PASTE) that were invalid or ambiguous,
+
+      Removes them from the main macro body,
+
+      Stashes them at the end of the tokens[] array in the same memory,
+
+      Sets macro->extra_tokens = 1 to signal their presence.
+    */
+    if (num_extra_tokens)
+      {
+        /* Place second and subsequent ## or %:%: tokens in sequences of
+           consecutive such tokens at the end of the list to preserve
+           information about where they appear, how they are spelt and
+           whether they are preceded by whitespace without otherwise
+           interfering with macro expansion.   Remember, this is
+           extremely rare, so efficiency is not a priority.  */
+        cpp_token *temp = (cpp_token *)_cpp_reserve_room
+          (pfile, 0, num_extra_tokens * sizeof (cpp_token));
+        unsigned extra_ix = 0, norm_ix = 0;
+        cpp_token *exp = macro->exp.tokens;
+        for (unsigned ix = 0; ix != macro->count; ix++)
+          if (exp[ix].type == CPP_PASTE)
+            temp[extra_ix++] = exp[ix];
+          else
+            exp[norm_ix++] = exp[ix];
+        memcpy (&exp[norm_ix], temp, num_extra_tokens * sizeof (cpp_token));
+
+        /* Record there are extra tokens.  */
+        macro->extra_tokens = 1;
+      }
 
  out:
 
@@ -4569,8 +4562,6 @@ pfile->state.in_directive = saved_in_directive;  // restore
 
   return ok ? macro : NULL;
 }
-
-
 
 bool
 _cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
@@ -4628,61 +4619,110 @@ _cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
 
 
 //--------------------------------------------------------------------------------
-// similar to _cpp_create_definition, though evaluates the body first and uses
-// paren balancing rather than requiring a single line definition.
+// `#assign` directive
+//    called from directives.cc::do_assign()
+
 
 bool
-_cpp_create_assign(cpp_reader *pfile, cpp_hashnode *node){
-  cpp_macro *macro;
+_cpp_create_assign(cpp_reader *pfile){
 
-  if (CPP_OPTION (pfile, traditional))
-    macro = _cpp_create_trad_definition (pfile);
-  else
-    macro = create_iso_definition (pfile);
+  /* parse the name expr
+       
+     We first parse the as though a cpp_macro definition to collect the arg list.
+     We then convert the macro arg list to a cpp_arg arg definition, so it can be
+     passed to expand_arg.
+  */
+    cpp_macro *macro = _cpp_new_macro(
+      pfile
+      ,cmk_macro
+      ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
+    );
+    macro->variadic = false;
+    macro->paramc = 0;
+    macro->parm.params = NULL;;
+    macro->fun_like = false;
 
-  if (!macro)
+    const char *paste_op_error_msg =
+      N_("'##' cannot appear at either end of a macro expansion");
+    unsigned int num_extra_tokens = 0;
+    !collect_body_tokens(
+      pfile 
+      ,macro 
+      ,&num_extra_tokens 
+      ,paste_op_error_msg 
+      ,true // parenthesis delineated
+    );
+    fprintf(stderr, "assign directive name_exp:");
+    print_token_list(macro->exp.tokens, macro->count);
+
+
+    macro_arg arg;
+    memset(&arg, 0, sizeof(arg));
+    const cpp_token *token_ptr = macro->exp.tokens;
+    arg.first = &token_ptr;
+    arg.count = macro->count;
+
+  /*
+    Expand the arg, and check if we can use it as a name, if not, throw
+    an error.
+  */
+    _cpp_push_macro_context(pfile, NULL);  // NULL = no macro node needed
+    expand_arg(pfile, &arg);
+    _cpp_pop_context(pfile);
+
+    const cpp_token *expanded_name = *arg.expanded;
+    size_t name_len = arg.expanded_count;
+    fprintf(stderr, "cpp_create_assign:: expanded_name: ");
+    print_token_list(expanded_name, name_len);
+
+#if 0
+
+
+
+
+
+if (name_len != 1 || expanded_name[0].type != CPP_NAME)
+  {
+    cpp_error(pfile, CPP_DL_ERROR,
+              "first expression of #assign must expand to a single macro name");
+    // cleanup
+    free(arg.expanded);
     return false;
+  }
 
-  if (cpp_macro_p (node))
-    {
-      if (CPP_OPTION (pfile, warn_unused_macros))
-	_cpp_warn_if_unused_macro (pfile, node, NULL);
+cpp_hashnode *name_node = expanded_name[0].val.node;
 
-      if (warn_of_redefinition (pfile, node, macro))
-	{
-          const enum cpp_warning_reason reason
-	    = (cpp_builtin_macro_p (node) && !(node->flags & NODE_WARN))
-	    ? CPP_W_BUILTIN_MACRO_REDEFINED : CPP_W_NONE;
 
-	  bool warned = 
-	    cpp_pedwarning_with_line (pfile, reason,
-				      pfile->directive_line, 0,
-				      "\"%s\" redefined", NODE_NAME (node));
 
-	  if (warned && cpp_user_macro_p (node))
-	    cpp_error_with_line (pfile, CPP_DL_NOTE,
-				 node->value.macro->line, 0,
-			 "this is the location of the previous definition");
-	}
-      _cpp_free_definition (node);
-    }
+  // expand the name expr
+  //   puts the result in expanded_name and name_len
+  // 
+    size_t name_len;
+    cpp_token *expanded_name = expand_assign_arg(
+      pfile
+      ,macro->exp.tokens
+      ,macro->count
+      ,&name_len
+    );
 
-  /* Enter definition in hash table.  */
-  node->type = NT_USER_MACRO;
-  node->value.macro = macro;
-  if (! ustrncmp (NODE_NAME (node), DSC ("__STDC_"))
-      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_FORMAT_MACROS")
-      /* __STDC_LIMIT_MACROS and __STDC_CONSTANT_MACROS are mentioned
-	 in the C standard, as something that one must use in C++.
-	 However DR#593 and C++11 indicate that they play no role in C++.
-	 We special-case them anyway.  */
-      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_LIMIT_MACROS")
-      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_CONSTANT_MACROS"))
-    node->flags |= NODE_WARN;
+    fprintf(stderr, "cpp_create_assign:: expanded_name: ");
+    print_token_list(expanded_name, name_len);
 
-  /* If user defines one of the conditional macros, remove the
-     conditional flag */
-  node->flags &= ~NODE_CONDITIONAL;
+
+  // name must expand to a single identifier
+  // 
+    if (name_len != 1 || expanded_name[0].type != CPP_NAME)
+      {
+        cpp_error(pfile, CPP_DL_ERROR,
+                  "first expression of #assign must expand to a single macro name");
+        return false;
+      }
+
+    //  cpp_hashnode *name_node = expanded_name[0].val.node;
+
+#endif
+
+
 
   return true;
 }

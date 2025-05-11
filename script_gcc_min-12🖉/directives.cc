@@ -2805,45 +2805,6 @@ _cpp_bracket_include(cpp_reader *pfile)
 // RT extensions 
 //--------------------------------------------------------------------------------
 
-//--------------------------------------------------------------------------------
-// directive `#macro`
-//   #macro name (parameter [,parameter] ...) (body_expr)
-//   #macro name () (body_expr)
-//
-//   The body expr can be empty, but the parents remain
-//   Whitespace between name and parents, and between parens, is ignored
-
-extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
-
-static void
-do_macro (cpp_reader *pfile)
-{
-  cpp_hashnode *node = lex_macro_node(pfile, true);
-
-  if(node)
-    {
-      /* If we have been requested to expand comments into macros,
-	 then re-enable saving of comments.  */
-      pfile->state.save_comments =
-	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
-
-      if(pfile->cb.before_define)
-	pfile->cb.before_define (pfile);
-
-      if( _cpp_create_macro(pfile, node) )
-	if (pfile->cb.define)
-	  pfile->cb.define (pfile, pfile->directive_line, node);
-
-      node->flags &= ~NODE_USED;
-    }
-}
-
-
-//--------------------------------------------------------------------------------
-// RT extention, directive `#assign`
-
-extern bool _cpp_create_assign(cpp_reader *pfile, cpp_hashnode *node);
-
 const char *
 cpp_token_as_text(const cpp_token *token)
 {
@@ -2897,71 +2858,180 @@ cpp_token_as_text(const cpp_token *token)
   return buffer;
 }
 
-cpp_hashnode *
-_cpp_lex_paren_delim_token(cpp_reader *pfile){
-  const cpp_token *tok = _cpp_lex_token(pfile);
+#if 0
+const char *
+cpp_token_as_text (const cpp_token *token)
+{
+  static char buffer[256];
 
-  if(tok->type != CPP_OPEN_PAREN){
-    cpp_error_with_line(
-      pfile
-      ,CPP_DL_ERROR
-      ,tok->src_loc
-      ,0
-      ,"expected '(' before name ,but found: %s"
-      ,cpp_token_as_text(tok)
-    );
-    return NULL;
-  }
+  switch (token->type)
+    {
+    case CPP_NAME:
+      snprintf(buffer, sizeof(buffer), "identifier '%s'",
+               NODE_NAME(token->val.node.node));
+      break;
 
-  tok = _cpp_lex_token(pfile);
-  if(tok->type != CPP_NAME){
-    cpp_error_with_line(
-      pfile
-      ,CPP_DL_ERROR
-      ,tok->src_loc
-      ,0
-      ,"expected macro name identifier ,but found: %s"
-      ,cpp_token_as_text(tok)
-    );
-    return NULL;
-  }
+    case CPP_NUMBER:
+    case CPP_STRING:
+    case CPP_CHAR:
+    case CPP_HEADER_NAME:
+      snprintf(buffer, sizeof(buffer), "'%.*s'",
+               token->val.str.len,
+               token->val.str.text);
+      break;
 
-  cpp_hashnode *node = tok->val.node.node;
+    case CPP_EOF:
+      return "<EOF>";
+    case CPP_OTHER:
+      return "<OTHER>";
+    case CPP_OPEN_PAREN:
+      return "'('";
+    case CPP_CLOSE_PAREN:
+      return "')'";
+    case CPP_COMMA:
+      return "','";
+    case CPP_SEMICOLON:
+      return "';'";
+    case CPP_PLUS:
+      return "'+'";
+    case CPP_MINUS:
+      return "'-'";
+    case CPP_MULT:
+      return "'*'";
+    case CPP_DIV:
+      return "'/'";
+    case CPP_MOD:
+      return "'%'";
+    // Add more token types as needed...
 
-  tok = _cpp_lex_token(pfile);
-  if(tok->type != CPP_CLOSE_PAREN){
-    cpp_error_with_line(
-      pfile
-      ,CPP_DL_ERROR
-      ,tok->src_loc
-      ,0
-      ,"expected ')' after macro name ,but found: %s"
-      ,cpp_token_as_text(tok)
-    );
-    return NULL;
-  }
+    default:
+      snprintf(buffer, sizeof(buffer), "<unknown type %d>", token->type);
+      break;
+    }
 
-  return node;
+  // Append token flags if any are set
+  if (token->flags & (PREV_WHITE | DIGRAPH | STRINGIFY_ARG |
+                      PASTE_LEFT | NAMED_OP | BOL | PURE_ZERO |
+                      SP_DIGRAPH | SP_PREV_WHITE | NO_EXPAND | PRAGMA_OP))
+    {
+      size_t len = strlen(buffer);
+      snprintf(buffer + len, sizeof(buffer) - len, " [flags:");
+
+      if (token->flags & PREV_WHITE)
+        strncat(buffer, " PREV_WHITE", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & DIGRAPH)
+        strncat(buffer, " DIGRAPH", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & STRINGIFY_ARG)
+        strncat(buffer, " STRINGIFY", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & PASTE_LEFT)
+        strncat(buffer, " ##L", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & NAMED_OP)
+        strncat(buffer, " NAMED_OP", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & BOL)
+        strncat(buffer, " BOL", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & PURE_ZERO)
+        strncat(buffer, " ZERO", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & SP_DIGRAPH)
+        strncat(buffer, " ##DIGRAPH", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & SP_PREV_WHITE)
+        strncat(buffer, " SP_WHITE", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & NO_EXPAND)
+        strncat(buffer, " NO_EXPAND", sizeof(buffer) - strlen(buffer) - 1);
+      if (token->flags & PRAGMA_OP)
+        strncat(buffer, " _Pragma", sizeof(buffer) - strlen(buffer) - 1);
+
+      strncat(buffer, " ]", sizeof(buffer) - strlen(buffer) - 1);
+    }
+
+  return buffer;
 }
+#endif
+
+void print_token_list(const cpp_token *tokens ,size_t count){
+  for (size_t i = 0; i < count; ++i)
+    fprintf( stderr ,"[%zu] %s\n" ,i , cpp_token_as_text(&tokens[i]) );
+}
+
+
+//--------------------------------------------------------------------------------
+// directive `#macro`
+//   #macro name (parameter [,parameter] ...) (body_expr)
+//   #macro name () (body_expr)
+//
+//   The body expr can be empty, but the parents remain
+//   Whitespace has no semantic meaning beyond its usual duty as a separator.
+
+extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
+
+static void
+do_macro (cpp_reader *pfile)
+{
+  cpp_hashnode *node = lex_macro_node(pfile, true);
+
+  if(node)
+    {
+      /* If we have been requested to expand comments into macros,
+	 then re-enable saving of comments.  */
+      pfile->state.save_comments =
+	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
+
+      if(pfile->cb.before_define)
+	pfile->cb.before_define (pfile);
+
+      if( _cpp_create_macro(pfile, node) )
+	if (pfile->cb.define)
+	  pfile->cb.define (pfile, pfile->directive_line, node);
+
+      node->flags &= ~NODE_USED;
+    }
+}
+
+
+//--------------------------------------------------------------------------------
+// RT extention, directive `#assign`
+//
+//   #assign (name_expr) (body_expr)
+//
+//   The body expr can be empty, but name_expr can not be.
+//   Whitespace has no semantic meaning beyond its usual duty as a separator.
+//
+//   This differs from `#define`:
+//     -Assign takes no arguments.
+//     -Name_expr and body_expr are expanded as though macros
+//     -The name expr must expand to become a valid macro name.
+//     -The name is entered into the symbol table with the value of
+//      the expanded body after the expansion.
+
+
+extern bool _cpp_create_assign(cpp_reader *pfile);
+
 
 static void do_assign(cpp_reader *pfile){
 
-  cpp_hashnode *node = _cpp_lex_paren_delim_token(pfile);
-  if(!node) return;
+  _cpp_create_assign(pfile);
 
-  /* If we have been requested to expand comments into macros,
-     then re-enable saving of comments.  */
-  pfile->state.save_comments =
-    ! CPP_OPTION (pfile ,discard_comments_in_macro_exp);
+#if 0
 
-  if (pfile->cb.before_define)
-    pfile->cb.before_define (pfile);
 
-  if (_cpp_create_assign (pfile ,node))
-    if (pfile->cb.define)
-      pfile->cb.define (pfile ,pfile->directive_line ,node);
+  cpp_hashnode *node = lex_macro_node(pfile, true);
 
-  node->flags &= ~NODE_USED;
+  if(node)
+    {
+      /* If we have been requested to expand comments into macros,
+	 then re-enable saving of comments.  */
+      pfile->state.save_comments =
+	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
+
+      if(pfile->cb.before_define)
+	pfile->cb.before_define (pfile);
+
+      if( _cpp_create_assign(pfile, node) )
+	if (pfile->cb.define)
+	  pfile->cb.define (pfile, pfile->directive_line, node);
+
+      node->flags &= ~NODE_USED;
+    }
+#endif
 
 }
 
