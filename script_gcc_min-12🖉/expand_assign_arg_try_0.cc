@@ -14,9 +14,12 @@
   derived from enter_macro_context()
 */
 static int
-expand_assign_arg (cpp_reader *pfile, cpp_macro *macro,
-		     const cpp_token *result, location_t location)
-{
+enter_macro_context_RT_assign(
+  cpp_reader *pfile
+  ,cpp_macro *macro
+  ,const cpp_token *result
+  ,location_t location
+){
   /* The presence of a macro invalidates a file's controlling macro.  */
   pfile->mi_valid = false;
   pfile->state.angled_headers = false;
@@ -24,8 +27,9 @@ expand_assign_arg (cpp_reader *pfile, cpp_macro *macro,
 
       // not expanding a pragma
 
-      /* Disable the macro within its expansion.  */
-      node->flags |= NODE_DISABLED;
+      // Disable the macro within its expansion. 
+      // assign has no node at this point
+      // node->flags |= NODE_DISABLED;
 
       // not lazy, doing it now
       // no need to notify of macro use
@@ -35,7 +39,9 @@ expand_assign_arg (cpp_reader *pfile, cpp_macro *macro,
 
       // no need to check for the track_macro_expansion option
 
-      _cpp_push_token_context (pfile, node, macro->exp.tokens, tokens_count);
+      //_cpp_push_token_context (pfile, node, macro->exp.tokens, tokens_count);
+      // _cpp_push_token_context allows for a NULL node
+      _cpp_push_token_context (pfile, NULL, macro->exp.tokens, tokens_count);
                                  
       num_macro_tokens_counter += tokens_count;
 

@@ -2953,14 +2953,14 @@ void print_token_list(const cpp_token *tokens ,size_t count){
 }
 
 
-//--------------------------------------------------------------------------------
-// directive `#macro`
-//   #macro name (parameter [,parameter] ...) (body_expr)
-//   #macro name () (body_expr)
-//
-//   The body expr can be empty, but the parents remain
-//   Whitespace has no semantic meaning beyond its usual duty as a separator.
+/*--------------------------------------------------------------------------------
+ directive `#macro`
+   #macro name (parameter [,parameter] ...) (body_expr)
+   #macro name () (body_expr)
 
+   The body expr can be empty, but the parents remain
+   Whitespace has no semantic meaning beyond its usual duty as a separator.
+*/
 extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
 
 static void

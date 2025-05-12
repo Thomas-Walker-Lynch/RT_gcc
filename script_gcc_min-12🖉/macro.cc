@@ -4165,7 +4165,7 @@ debug_peek_token (cpp_reader *pfile)
 */
 
 // collects the body of a #define or related directive 
-typedef enum collect_body_tokens_return {
+typedef enum collect_body_tokens_status {
   CBT_OK = 0,                        // Normal successful collection
 
   CBT_ERR_EXPECTED_OPEN_PAREN,      // Failed to find expected opening '('
@@ -4175,10 +4175,9 @@ typedef enum collect_body_tokens_return {
   CBT_ERR_VAOPT_STATE_INVALID,      // __VA_OPT__ or variadic tracking error
   CBT_ERR_EOF_FETCH_FAILED,         // Failed to fetch next line after EOF
   CBT_ERR_UNKNOWN                   // Fallback error (should not occur)
-} collect_body_tokens_return;
+} collect_body_tokens_status;
 
-void
-debug_collect_body_tokens_status(enum collect_body_tokens_return status)
+void debug_print_collect_body_tokens_status(enum collect_body_tokens_status status)
 {
 #if 1
   const char *message = NULL;
@@ -4214,13 +4213,13 @@ debug_collect_body_tokens_status(enum collect_body_tokens_return status)
 #endif
 }
 
-static enum collect_body_tokens_return
-collect_body_tokens_1(
+static enum collect_body_tokens_status collect_body_tokens_1(
   cpp_reader *pfile
   ,cpp_macro *macro
   ,unsigned int *num_extra_tokens_out
   ,const char *paste_op_error_msg
   ,bool paren_matching
+  ,bool expand_tokens
 ){
   bool following_paste_op = false;
   unsigned int num_extra_tokens = 0;
@@ -4230,10 +4229,15 @@ collect_body_tokens_1(
   for (vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);; )
     {
       // gets a token
-      //   first parses token onto `macro->exp.tokens[macro->count]`
-      //   then pulls the token off of `macro->exp.tokens[macro->count]`
-      macro = lex_expansion_token(pfile, macro);
-      token = &macro->exp.tokens[macro->count++];
+      if(!expand_tokens){
+        // first parses token onto `macro->exp.tokens[macro->count]`
+        // then pulls the token off of `macro->exp.tokens[macro->count]`
+        // reassigns macro due to possible macro->exp.tokens buffer expansion
+        macro = lex_expansion_token(pfile, macro);
+        token = &macro->exp.tokens[macro->count++];
+      }else{
+
+      }
       fprintf( stderr, "top of loop, read token %s\n", cpp_token_as_text(token) );
 
       // recognize macro args, give them type CPP_MACRO_ARG
@@ -4341,15 +4345,17 @@ collect_body_tokens_1(
 */
 static bool
 collect_body_tokens(
-  cpp_reader *pfile,
-  cpp_macro *macro,
-  unsigned int *num_extra_tokens_out,
-  const char *paste_op_error_msg,
-  bool paren_matching
+  cpp_reader *pfile
+  ,cpp_macro *macro
+  ,unsigned int *num_extra_tokens_out
+  ,const char *paste_op_error_msg
+  ,bool paren_matching
+  ,bool expand_tokens
 ){
   int saved_keep_tokens = pfile->keep_tokens;
   int saved_in_directive = pfile->state.in_directive;
   cpp_token *token;
+  location_t src_loc;
 
   if (paren_matching)
     {
@@ -4364,7 +4370,7 @@ collect_body_tokens(
           ,"expected body delimiter '(', but found: %s"
           ,cpp_token_as_text(token)
         );
-        debug_collect_body_tokens_status(CBT_ERR_EXPECTED_OPEN_PAREN);
+        debug_print_collect_body_tokens_status(CBT_ERR_EXPECTED_OPEN_PAREN);
         return false;
       }
 
@@ -4373,12 +4379,13 @@ collect_body_tokens(
       pfile->state.in_directive = 0;
     }
 
-  collect_body_tokens_return status = collect_body_tokens_1(
+  collect_body_tokens_status status = collect_body_tokens_1(
       pfile
       ,macro
       ,num_extra_tokens_out
       ,paste_op_error_msg
       ,paren_matching
+      ,expand_tokens
     );
                           
   if (paren_matching)
@@ -4388,28 +4395,29 @@ collect_body_tokens(
     }
 
   // print exit status
-  // note single point of countrol at top of debug_collect_body_tokens_status()
-  debug_collect_body_tokens_status(status);  
+  // note single point of countrol at top of debug_print_collect_body_tokens_status()
+  debug_print_collect_body_tokens_status(status);  
 
   return status == CBT_OK;
 }
 
 /*--------------------------------------------------------------------------------
+
   This code was derived from create_iso_defined().
   Given pfile returns a macro definition.
 
   #macro name (parameter [,parameter] ...) (body_expr)
   #macro name () (body_expr)
 
-  like _cpp_create_definition though uses paren blancing instead or requiring a single line definition.
+  Upon entry, the name was already been parsed in directives.cc::do_macro, so the next token will be the opening paren of the parameter list.
 
-  the cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {`
-  it has a flexible array field in a union as a last member: cpp_token tokens[1];
+  Thi code is similar to `_cpp_create_definition` though uses paren blancing around the body, instead of requiring the macro body be on a single line.
+
+  The cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {` it has a flexible array field in a union as a last member: cpp_token tokens[1];
 */
 static cpp_macro *
-create_iso_macro (cpp_reader *pfile)
+create_iso_RT_macro (cpp_reader *pfile)
 {
-  bool following_paste_op = false;
   const char *paste_op_error_msg =
     N_("'##' cannot appear at either end of a macro expansion");
   unsigned int num_extra_tokens = 0;
@@ -4420,14 +4428,9 @@ create_iso_macro (cpp_reader *pfile)
   cpp_macro *macro = NULL;
 
   /*
-    At this point the name has already been parsed. The next token will be the opening paren of the parameter list. 
+    After these six lines of code, the next token, hopefully being '(', will be in the variable 'token'.
 
-    The `#dmacro` directive always has a parameter list. (If this were a `#define` the parser
-    would be looking for a space or a paren to determin if this was a function macro.)
-    
-    After this six lines ofs code, the next token will be in the variable 'token'.
-
-    Neither `first` nor `saved_cur_token` are referred to again, and I don't really understand the dance here. Apparently we must give pfile->cur_token an allocation to point at.
+    Neither `first` nor `saved_cur_token` are referred to again, and I don't really understand the dance here. Apparently we need to provide pfile->cur_token with a buffer.
   */
     cpp_token first;
     cpp_token *saved_cur_token = pfile->cur_token;
@@ -4465,8 +4468,8 @@ create_iso_macro (cpp_reader *pfile)
     params = (cpp_hashnode **)_cpp_commit_buff( pfile, sizeof (cpp_hashnode *) * nparms );
     token = NULL;
 
-  // macro declaration
-  //   A macro struct is variable size, due to a trailing token list, so the memory
+  // instantiate a temporary macro struct, and initialize it
+  //   A macro struct instance is variable size, due to a trailing token list, so the memory
   //   reservations size will be adjusted when this is committed.
   //
     macro = _cpp_new_macro(
@@ -4489,6 +4492,7 @@ create_iso_macro (cpp_reader *pfile)
         ,&num_extra_tokens 
         ,paste_op_error_msg 
         ,true // parenthesis delineated
+        ,false // tokens are not expanded as part of a macro definition
       )
     ) goto out;
 
@@ -4563,11 +4567,14 @@ create_iso_macro (cpp_reader *pfile)
   return ok ? macro : NULL;
 }
 
+/*
+  called from directives.cc:: do_macro
+*/
 bool
 _cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
   cpp_macro *macro;
 
-  macro = create_iso_macro (pfile);
+  macro = create_iso_RT_macro (pfile);
 
   if (!macro)
     return false;
@@ -4622,107 +4629,167 @@ _cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
 // `#assign` directive
 //    called from directives.cc::do_assign()
 
+/* 
+  Given the cpp_reader and an assignment argument in the form of a macro.
+  Returns ... through the `result` argument.
+  Returns ...
+
+  Assign name_expr and body_expr arguments are each placed into a
+  macro instance, then are sent here to be expanded.
+
+  Push the context of a macro onto the context stack.  If we can
+  successfully expand the macro, we push a context containing its
+  yet-to-be-rescanned replacement list and return one.  LOCATION is
+  the location of the expansion point of the macro.
+
+  derived from enter_macro_context()
+*/
+static int
+enter_macro_context_RT_assign(
+  cpp_reader *pfile
+  ,cpp_macro *macro
+  //  ,const cpp_token *result  // not needed for assign
+  // ,location_t location // suprising, but all references to it are gone
+){
+  /* The presence of a macro invalidates a file's controlling macro.  */
+  pfile->mi_valid = false;
+  pfile->state.angled_headers = false;
+  pfile->about_to_expand_macro_p = true;
+
+      // not expanding a pragma
+
+      // Disable the macro within its expansion. 
+      // assign has no node at this point
+      // node->flags |= NODE_DISABLED;
+
+      // not lazy, doing it now
+      // no need to notify of macro use
+      // macro->paramc is indeed zero when we get here (assign has no parameters)
+
+      unsigned tokens_count = macro_real_token_count (macro);
+
+      // no need to check for the track_macro_expansion option
+
+      //_cpp_push_token_context (pfile, node, macro->exp.tokens, tokens_count);
+      // _cpp_push_token_context allows for a NULL node
+      _cpp_push_token_context (pfile, NULL, macro->exp.tokens, tokens_count);
+                                 
+      num_macro_tokens_counter += tokens_count;
+
+      // not inside of a pragma (inside of a #assign)
+
+      pfile->about_to_expand_macro_p = false;
+      return 1;
+
+      // removed code that is unreachable under these assumptions
+}
+
+static cpp_macro *
+collect_and_expand_macro (cpp_reader *pfile)
+{
+  // Step 1: Collect tokens
+  cpp_macro *unexpanded = _cpp_new_macro(
+    pfile,
+    cmk_macro,
+    _cpp_reserve_room(pfile, 0, sizeof(cpp_macro))
+  );
+
+  unexpanded->variadic = false;
+  unexpanded->paramc = 0;
+  unexpanded->parm.params = NULL;
+  unexpanded->fun_like = false;
+
+  const char *paste_op_error_msg =
+    N_("'##' cannot appear at either end of a macro expansion");
+
+  unsigned int num_extra_tokens = 0;
+  if(
+    !collect_body_tokens(
+       pfile
+       ,unexpanded
+       ,&num_extra_tokens
+       ,paste_op_error_msg
+       ,true // parenthesis delineated
+       ,false // expand tokens
+     )
+  )
+    return NULL;
+
+  if (unexpanded->count == 0)
+    return NULL;
+
+  fprintf(stderr, "assign directive expr before expansion:\n");
+  print_token_list(unexpanded->exp.tokens, unexpanded->count);
+
+  // Step 2: Commit unexpanded before allocating again
+  unexpanded = (cpp_macro *) _cpp_commit_buff(
+    pfile,
+    sizeof(cpp_macro) - sizeof(cpp_token)
+      + sizeof(cpp_token) * unexpanded->count
+  );
+
+  // Step 3: Expand
+  // enter_macro_context_RT_assign(pfile, unexpanded);
+
+  cpp_macro *expanded = _cpp_new_macro(
+    pfile,
+    cmk_macro,
+    _cpp_reserve_room(pfile, 0, sizeof(cpp_macro))
+  );
+
+  expanded->variadic = false;
+  expanded->paramc = 0;
+  expanded->parm.params = NULL;
+  expanded->fun_like = false;
+
+  size_t count = 0;
+  while (1)
+    {
+      const cpp_token *tok;
+      location_t loc;
+
+      tok = cpp_get_token_1(pfile, &loc);
+      if (tok->type == CPP_EOF)
+        break;
+
+      expanded->exp.tokens[count] = *tok;
+      expanded->exp.tokens[count].src_loc = loc;
+      count++;
+    }
+
+  expanded->count = count;
+
+  fprintf(stderr, "assign directive expr after expansion:\n");
+  print_token_list(expanded->exp.tokens, count);
+
+  // Step 4: Commit and return
+  expanded = (cpp_macro *) _cpp_commit_buff(
+    pfile,
+    sizeof(cpp_macro) - sizeof(cpp_token) + sizeof(cpp_token) * count
+  );
+
+  return expanded;
+}
+
 
 bool
 _cpp_create_assign(cpp_reader *pfile){
 
   /* parse the name expr
-       
+
      We first parse the as though a cpp_macro definition to collect the arg list.
      We then convert the macro arg list to a cpp_arg arg definition, so it can be
      passed to expand_arg.
   */
-    cpp_macro *macro = _cpp_new_macro(
-      pfile
-      ,cmk_macro
-      ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
-    );
-    macro->variadic = false;
-    macro->paramc = 0;
-    macro->parm.params = NULL;;
-    macro->fun_like = false;
+  cpp_macro *name_macro = collect_and_expand_macro(pfile);
+  // -if `name_macro` did not reduced to a name, issue error and bailout
+  // -if there is a macro in the symbol table with the given name, remove it
+  //  (if we can check if it was put there by assign first, that would be better)
 
-    const char *paste_op_error_msg =
-      N_("'##' cannot appear at either end of a macro expansion");
-    unsigned int num_extra_tokens = 0;
-    !collect_body_tokens(
-      pfile 
-      ,macro 
-      ,&num_extra_tokens 
-      ,paste_op_error_msg 
-      ,true // parenthesis delineated
-    );
-    fprintf(stderr, "assign directive name_exp:");
-    print_token_list(macro->exp.tokens, macro->count);
-
-
-    macro_arg arg;
-    memset(&arg, 0, sizeof(arg));
-    const cpp_token *token_ptr = macro->exp.tokens;
-    arg.first = &token_ptr;
-    arg.count = macro->count;
-
-  /*
-    Expand the arg, and check if we can use it as a name, if not, throw
-    an error.
+  /* parse the body macro
   */
-    _cpp_push_macro_context(pfile, NULL);  // NULL = no macro node needed
-    expand_arg(pfile, &arg);
-    _cpp_pop_context(pfile);
-
-    const cpp_token *expanded_name = *arg.expanded;
-    size_t name_len = arg.expanded_count;
-    fprintf(stderr, "cpp_create_assign:: expanded_name: ");
-    print_token_list(expanded_name, name_len);
-
-#if 0
-
-
-
-
-
-if (name_len != 1 || expanded_name[0].type != CPP_NAME)
-  {
-    cpp_error(pfile, CPP_DL_ERROR,
-              "first expression of #assign must expand to a single macro name");
-    // cleanup
-    free(arg.expanded);
-    return false;
-  }
-
-cpp_hashnode *name_node = expanded_name[0].val.node;
-
-
-
-  // expand the name expr
-  //   puts the result in expanded_name and name_len
-  // 
-    size_t name_len;
-    cpp_token *expanded_name = expand_assign_arg(
-      pfile
-      ,macro->exp.tokens
-      ,macro->count
-      ,&name_len
-    );
-
-    fprintf(stderr, "cpp_create_assign:: expanded_name: ");
-    print_token_list(expanded_name, name_len);
-
-
-  // name must expand to a single identifier
-  // 
-    if (name_len != 1 || expanded_name[0].type != CPP_NAME)
-      {
-        cpp_error(pfile, CPP_DL_ERROR,
-                  "first expression of #assign must expand to a single macro name");
-        return false;
-      }
-
-    //  cpp_hashnode *name_node = expanded_name[0].val.node;
-
-#endif
-
-
+  cpp_macro *body_macro = collect_and_expand_macro(pfile);
+  // enter the macro into the symbol table using the aforementioned name
 
   return true;
 }
