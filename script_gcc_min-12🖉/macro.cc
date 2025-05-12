@@ -4224,47 +4224,89 @@ static enum collect_body_tokens_status collect_body_tokens_1(
   bool following_paste_op = false;
   unsigned int num_extra_tokens = 0;
   int paren_depth = 1; 
-  cpp_token *token;
+  cpp_token *lex_token;
+  const cpp_token *token;
+  location_t *src_loc;
 
   for (vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);; )
     {
-      // gets a token
-      if(!expand_tokens){
-        // first parses token onto `macro->exp.tokens[macro->count]`
+      // get a token
+      if(expand_tokens){
+        token = cpp_get_token_1 (pfile, src_loc);
+        fprintf( stderr, "token %s\n", cpp_token_as_text(token) );
+        macro = (cpp_macro *)_cpp_reserve_room(
+          pfile,
+          sizeof(cpp_macro) - sizeof(cpp_token) + macro->count * sizeof(cpp_token),
+          sizeof(cpp_token)
+        );
+        macro->exp.tokens[macro->count] = *token;
+        macro->count++;
+
+      }else{
+        // first parses lex_token onto `macro->exp.tokens[macro->count]`
         // then pulls the token off of `macro->exp.tokens[macro->count]`
         // reassigns macro due to possible macro->exp.tokens buffer expansion
         macro = lex_expansion_token(pfile, macro);
-        token = &macro->exp.tokens[macro->count++];
-      }else{
+        lex_token = &macro->exp.tokens[macro->count++];
+        fprintf( stderr, "lex_token %s\n", cpp_token_as_text(lex_token) );
 
-      }
-      fprintf( stderr, "top of loop, read token %s\n", cpp_token_as_text(token) );
+        // recognize macro args, give them type CPP_MACRO_ARG
+        if (macro->count > 1 && lex_token[-1].type == CPP_HASH && macro->fun_like)
+          {
+            if (lex_token->type == CPP_MACRO_ARG
+                || (macro->variadic
+                    && lex_token->type == CPP_NAME
+                    && lex_token->val.node.node == pfile->spec_nodes.n__VA_OPT__))
+              {
+                if (lex_token->flags & PREV_WHITE)
+                  lex_token->flags |= SP_PREV_WHITE;
+                if (lex_token[-1].flags & DIGRAPH)
+                  lex_token->flags |= SP_DIGRAPH;
+                lex_token->flags &= ~PREV_WHITE;
+                lex_token->flags |= STRINGIFY_ARG;
+                lex_token->flags |= lex_token[-1].flags & PREV_WHITE;
+                lex_token[-1] = lex_token[0];
+                macro->count--;
+              }
+            else if (CPP_OPTION (pfile, lang) != CLK_ASM)
+              {
+                cpp_error(pfile, CPP_DL_ERROR,
+                          "'#' is not followed by a macro parameter");
+                return CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG;
+              }
+          }
 
-      // recognize macro args, give them type CPP_MACRO_ARG
-      if (macro->count > 1 && token[-1].type == CPP_HASH && macro->fun_like)
-        {
-          if (token->type == CPP_MACRO_ARG
-              || (macro->variadic
-                  && token->type == CPP_NAME
-                  && token->val.node.node == pfile->spec_nodes.n__VA_OPT__))
-            {
-              if (token->flags & PREV_WHITE)
-                token->flags |= SP_PREV_WHITE;
-              if (token[-1].flags & DIGRAPH)
-                token->flags |= SP_DIGRAPH;
-              token->flags &= ~PREV_WHITE;
-              token->flags |= STRINGIFY_ARG;
-              token->flags |= token[-1].flags & PREV_WHITE;
-              token[-1] = token[0];
-              macro->count--;
-            }
-          else if (CPP_OPTION (pfile, lang) != CLK_ASM)
-            {
-              cpp_error(pfile, CPP_DL_ERROR,
-                        "'#' is not followed by a macro parameter");
-              return CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG;
-            }
+        if (lex_token->type == CPP_PASTE)
+          {
+            if (macro->count == 1)
+              {
+                cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+                return CBT_ERR_PASTE_AT_END; // the font end of the buffer
+              }
+
+            if (following_paste_op)
+              {
+                num_extra_tokens++;
+                lex_token->val.token_no = macro->count - 1;
+              }
+            else
+              {
+                --macro->count;
+                lex_token[-1].flags |= PASTE_LEFT;
+                if (lex_token->flags & DIGRAPH)
+                  lex_token[-1].flags |= SP_DIGRAPH;
+                if (lex_token->flags & PREV_WHITE)
+                  lex_token[-1].flags |= SP_PREV_WHITE;
+              }
+            following_paste_op = true;
+          }
+        else{
+          following_paste_op = false;
         }
+
+        token = lex_token;
+      }
+
 
       // parentheses matching overhead
       if(paren_matching){
@@ -4302,34 +4344,6 @@ static enum collect_body_tokens_status collect_body_tokens_1(
         return CBT_OK;
       }
 
-      if (token->type == CPP_PASTE)
-        {
-          if (macro->count == 1)
-            {
-              cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
-              return CBT_ERR_PASTE_AT_END; // the font end of the buffer
-            }
-
-          if (following_paste_op)
-            {
-              num_extra_tokens++;
-              token->val.token_no = macro->count - 1;
-            }
-          else
-            {
-              --macro->count;
-              token[-1].flags |= PASTE_LEFT;
-              if (token->flags & DIGRAPH)
-                token[-1].flags |= SP_DIGRAPH;
-              if (token->flags & PREV_WHITE)
-                token[-1].flags |= SP_PREV_WHITE;
-            }
-          following_paste_op = true;
-        }
-      else{
-        following_paste_op = false;
-      }
-
       if (vaopt_tracker.update(token) == vaopt_state::ERROR){
         return CBT_ERR_VAOPT_STATE_INVALID;
       }
@@ -4355,7 +4369,6 @@ collect_body_tokens(
   int saved_keep_tokens = pfile->keep_tokens;
   int saved_in_directive = pfile->state.in_directive;
   cpp_token *token;
-  location_t src_loc;
 
   if (paren_matching)
     {
@@ -4415,9 +4428,8 @@ collect_body_tokens(
 
   The cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {` it has a flexible array field in a union as a last member: cpp_token tokens[1];
 */
-static cpp_macro *
-create_iso_RT_macro (cpp_reader *pfile)
-{
+static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
+
   const char *paste_op_error_msg =
     N_("'##' cannot appear at either end of a macro expansion");
   unsigned int num_extra_tokens = 0;
@@ -4430,7 +4442,8 @@ create_iso_RT_macro (cpp_reader *pfile)
   /*
     After these six lines of code, the next token, hopefully being '(', will be in the variable 'token'.
 
-    Neither `first` nor `saved_cur_token` are referred to again, and I don't really understand the dance here. Apparently we need to provide pfile->cur_token with a buffer.
+    _cpp_lex_direct() is going to clobber  pfile->cur_token with the token pointer, so
+    it is saved then restored.
   */
     cpp_token first;
     cpp_token *saved_cur_token = pfile->cur_token;
@@ -4629,167 +4642,66 @@ _cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
 // `#assign` directive
 //    called from directives.cc::do_assign()
 
-/* 
-  Given the cpp_reader and an assignment argument in the form of a macro.
-  Returns ... through the `result` argument.
-  Returns ...
-
-  Assign name_expr and body_expr arguments are each placed into a
-  macro instance, then are sent here to be expanded.
-
-  Push the context of a macro onto the context stack.  If we can
-  successfully expand the macro, we push a context containing its
-  yet-to-be-rescanned replacement list and return one.  LOCATION is
-  the location of the expansion point of the macro.
-
-  derived from enter_macro_context()
-*/
-static int
-enter_macro_context_RT_assign(
-  cpp_reader *pfile
-  ,cpp_macro *macro
-  //  ,const cpp_token *result  // not needed for assign
-  // ,location_t location // suprising, but all references to it are gone
-){
-  /* The presence of a macro invalidates a file's controlling macro.  */
-  pfile->mi_valid = false;
-  pfile->state.angled_headers = false;
-  pfile->about_to_expand_macro_p = true;
-
-      // not expanding a pragma
-
-      // Disable the macro within its expansion. 
-      // assign has no node at this point
-      // node->flags |= NODE_DISABLED;
-
-      // not lazy, doing it now
-      // no need to notify of macro use
-      // macro->paramc is indeed zero when we get here (assign has no parameters)
-
-      unsigned tokens_count = macro_real_token_count (macro);
-
-      // no need to check for the track_macro_expansion option
-
-      //_cpp_push_token_context (pfile, node, macro->exp.tokens, tokens_count);
-      // _cpp_push_token_context allows for a NULL node
-      _cpp_push_token_context (pfile, NULL, macro->exp.tokens, tokens_count);
-                                 
-      num_macro_tokens_counter += tokens_count;
-
-      // not inside of a pragma (inside of a #assign)
-
-      pfile->about_to_expand_macro_p = false;
-      return 1;
-
-      // removed code that is unreachable under these assumptions
-}
-
-static cpp_macro *
-collect_and_expand_macro (cpp_reader *pfile)
-{
-  // Step 1: Collect tokens
-  cpp_macro *unexpanded = _cpp_new_macro(
-    pfile,
-    cmk_macro,
-    _cpp_reserve_room(pfile, 0, sizeof(cpp_macro))
-  );
-
-  unexpanded->variadic = false;
-  unexpanded->paramc = 0;
-  unexpanded->parm.params = NULL;
-  unexpanded->fun_like = false;
-
-  const char *paste_op_error_msg =
-    N_("'##' cannot appear at either end of a macro expansion");
-
-  unsigned int num_extra_tokens = 0;
-  if(
-    !collect_body_tokens(
-       pfile
-       ,unexpanded
-       ,&num_extra_tokens
-       ,paste_op_error_msg
-       ,true // parenthesis delineated
-       ,false // expand tokens
-     )
-  )
-    return NULL;
-
-  if (unexpanded->count == 0)
-    return NULL;
-
-  fprintf(stderr, "assign directive expr before expansion:\n");
-  print_token_list(unexpanded->exp.tokens, unexpanded->count);
-
-  // Step 2: Commit unexpanded before allocating again
-  unexpanded = (cpp_macro *) _cpp_commit_buff(
-    pfile,
-    sizeof(cpp_macro) - sizeof(cpp_token)
-      + sizeof(cpp_token) * unexpanded->count
-  );
-
-  // Step 3: Expand
-  // enter_macro_context_RT_assign(pfile, unexpanded);
-
-  cpp_macro *expanded = _cpp_new_macro(
-    pfile,
-    cmk_macro,
-    _cpp_reserve_room(pfile, 0, sizeof(cpp_macro))
-  );
-
-  expanded->variadic = false;
-  expanded->paramc = 0;
-  expanded->parm.params = NULL;
-  expanded->fun_like = false;
-
-  size_t count = 0;
-  while (1)
-    {
-      const cpp_token *tok;
-      location_t loc;
-
-      tok = cpp_get_token_1(pfile, &loc);
-      if (tok->type == CPP_EOF)
-        break;
-
-      expanded->exp.tokens[count] = *tok;
-      expanded->exp.tokens[count].src_loc = loc;
-      count++;
-    }
-
-  expanded->count = count;
-
-  fprintf(stderr, "assign directive expr after expansion:\n");
-  print_token_list(expanded->exp.tokens, count);
-
-  // Step 4: Commit and return
-  expanded = (cpp_macro *) _cpp_commit_buff(
-    pfile,
-    sizeof(cpp_macro) - sizeof(cpp_token) + sizeof(cpp_token) * count
-  );
-
-  return expanded;
-}
-
-
 bool
 _cpp_create_assign(cpp_reader *pfile){
 
-  /* parse the name expr
+  /* name macro
 
-     We first parse the as though a cpp_macro definition to collect the arg list.
-     We then convert the macro arg list to a cpp_arg arg definition, so it can be
-     passed to expand_arg.
   */
-  cpp_macro *name_macro = collect_and_expand_macro(pfile);
-  // -if `name_macro` did not reduced to a name, issue error and bailout
-  // -if there is a macro in the symbol table with the given name, remove it
-  //  (if we can check if it was put there by assign first, that would be better)
+    cpp_macro *name_macro = _cpp_new_macro(
+      pfile
+      ,cmk_macro
+      ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
+    );
+    name_macro->variadic = false;
+    name_macro->paramc = 0;
+    name_macro->parm.params = NULL;
+    name_macro->fun_like = false;
+
+    unsigned int num_extra_tokens = 0;
+    const char *paste_op_error_msg =
+      N_("'##' cannot appear at either end of a macro expansion");
+
+    collect_body_tokens(
+      pfile 
+      ,name_macro 
+      ,&num_extra_tokens 
+      ,paste_op_error_msg 
+      ,true // parenthesis delineated
+      ,true // tokens are expanded as part of a macro definition
+    );
+    fprintf(stderr,"name_macro->count %d\n" ,name_macro->count);
+    fprintf(stderr,"assign directive name expr:\n");
+    print_token_list(name_macro->exp.tokens ,name_macro->count);
+
+  /* check name and keep a copy
+
+   */
 
   /* parse the body macro
+
   */
-  cpp_macro *body_macro = collect_and_expand_macro(pfile);
-  // enter the macro into the symbol table using the aforementioned name
+    cpp_macro *body_macro = _cpp_new_macro(
+      pfile
+      ,cmk_macro
+      ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
+    );
+    body_macro->variadic = false;
+    body_macro->paramc = 0;
+    body_macro->parm.params = NULL;
+    body_macro->fun_like = false;
+
+    collect_body_tokens(
+      pfile 
+      ,body_macro 
+      ,&num_extra_tokens 
+      ,paste_op_error_msg 
+      ,true // parenthesis delineated
+      ,false // tokens are not expanded as part of a macro definition
+    );
+    fprintf(stderr,"assign directive body expr:\n");
+    print_token_list(body_macro->exp.tokens ,body_macro->count);
+
 
   return true;
 }

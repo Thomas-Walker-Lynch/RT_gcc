@@ -2806,60 +2806,6 @@ _cpp_bracket_include(cpp_reader *pfile)
 //--------------------------------------------------------------------------------
 
 const char *
-cpp_token_as_text(const cpp_token *token)
-{
-  static char buffer[128];
-
-  switch (token->type)
-    {
-    case CPP_NAME:
-      snprintf(buffer, sizeof(buffer), "identifier '%s'",
-               NODE_NAME(token->val.node.node));
-      break;
-
-    case CPP_NUMBER:
-    case CPP_STRING:
-    case CPP_CHAR:
-    case CPP_HEADER_NAME:
-      snprintf(buffer, sizeof(buffer), "'%.*s'",
-               token->val.str.len,
-               token->val.str.text);
-      break;
-
-    case CPP_EOF:
-      return "<EOF>";
-    case CPP_OTHER:
-      return "<OTHER>";
-    case CPP_OPEN_PAREN:
-      return "'('";
-    case CPP_CLOSE_PAREN:
-      return "')'";
-    case CPP_COMMA:
-      return "','";
-    case CPP_SEMICOLON:
-      return "';'";
-    case CPP_PLUS:
-      return "'+'";
-    case CPP_MINUS:
-      return "'-'";
-    case CPP_MULT:
-      return "'*'";
-    case CPP_DIV:
-      return "'/'";
-    case CPP_MOD:
-      return "'%'";
-    // ... handle other symbolic types as needed ...
-
-    default:
-      snprintf(buffer, sizeof(buffer), "<unknown type %d>", token->type);
-      break;
-    }
-
-  return buffer;
-}
-
-#if 0
-const char *
 cpp_token_as_text (const cpp_token *token)
 {
   static char buffer[256];
@@ -2902,7 +2848,28 @@ cpp_token_as_text (const cpp_token *token)
       return "'/'";
     case CPP_MOD:
       return "'%'";
-    // Add more token types as needed...
+    case CPP_MACRO_ARG:
+      snprintf(buffer, sizeof(buffer), "macro_param '$%s'",
+         NODE_NAME(token->val.macro_arg.spelling));
+      break;
+
+    case CPP_PADDING: return "<PADDING>";
+    case CPP_COMMENT: return "<COMMENT>";
+    case CPP_HASH: return "'#'";
+    case CPP_PASTE: return "'##'";
+    case CPP_ELLIPSIS: return "'...'";
+    case CPP_COLON: return "':'";
+    case CPP_OPEN_SQUARE: return "'['";
+    case CPP_CLOSE_SQUARE: return "']'";
+    case CPP_OPEN_BRACE: return "'{'";
+    case CPP_CLOSE_BRACE: return "'}'";
+    case CPP_DOT: return "'.'";
+    case CPP_DEREF: return "'->'";
+    case CPP_SCOPE: return "'::'";
+    case CPP_DOT_STAR: return "'.*'";
+    case CPP_DEREF_STAR: return "'->*'";
+    case CPP_PRAGMA: return "<_Pragma>";
+    case CPP_KEYWORD: return "<keyword>";
 
     default:
       snprintf(buffer, sizeof(buffer), "<unknown type %d>", token->type);
@@ -2945,7 +2912,6 @@ cpp_token_as_text (const cpp_token *token)
 
   return buffer;
 }
-#endif
 
 void print_token_list(const cpp_token *tokens ,size_t count){
   for (size_t i = 0; i < count; ++i)
