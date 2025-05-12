@@ -4162,6 +4162,7 @@ debug_peek_token (cpp_reader *pfile)
 
 /*--------------------------------------------------------------------------------
   Collect body tokens.
+    
 */
 
 // collects the body of a #define or related directive 
@@ -4220,19 +4221,25 @@ static enum collect_body_tokens_status collect_body_tokens_1(
   ,const char *paste_op_error_msg
   ,bool paren_matching
   ,bool expand_tokens
+  ,enum cpp_ttype opening
+  ,enum cpp_ttype closing
 ){
   bool following_paste_op = false;
   unsigned int num_extra_tokens = 0;
   int paren_depth = 1; 
   cpp_token *lex_token;
   const cpp_token *token;
-  location_t *src_loc;
+  location_t src_loc;
 
   for (vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);; )
     {
       // get a token
       if(expand_tokens){
-        token = cpp_get_token_1 (pfile, src_loc);
+        token = cpp_get_token_1 (pfile, &src_loc);
+
+        // this is necessary for the name expr, but does it impact potential other uses of collect_body_tokens?  Another flag for this perhaps?
+        if(token->type == CPP_PADDING) continue;
+
         fprintf( stderr, "token %s\n", cpp_token_as_text(token) );
         macro = (cpp_macro *)_cpp_reserve_room(
           pfile,
@@ -4310,9 +4317,9 @@ static enum collect_body_tokens_status collect_body_tokens_1(
 
       // parentheses matching overhead
       if(paren_matching){
-        if( token->type == CPP_OPEN_PAREN || token->type == CPP_CLOSE_PAREN){
-          if(token->type == CPP_OPEN_PAREN) paren_depth++;
-          if(token->type == CPP_CLOSE_PAREN) paren_depth--;
+        if( token->type == opening || token->type == closing){
+          if(token->type == opening) paren_depth++;
+          if(token->type == closing) paren_depth--;
           fprintf( stderr, "new paren_depth: %d\n", paren_depth);
         }
 
@@ -4364,17 +4371,26 @@ collect_body_tokens(
   ,unsigned int *num_extra_tokens_out
   ,const char *paste_op_error_msg
   ,bool paren_matching
-  ,bool expand_tokens
 ){
   int saved_keep_tokens = pfile->keep_tokens;
   int saved_in_directive = pfile->state.in_directive;
+  bool expand_tokens;
   cpp_token *token;
+  enum cpp_ttype opening ,closing;
 
   if (paren_matching)
     {
       // the next token must be the opening paren
       token = _cpp_lex_direct(pfile);
-      if(token->type != CPP_OPEN_PAREN){
+      if(token->type == CPP_OPEN_PAREN){
+        expand_tokens = false;
+        opening = CPP_OPEN_PAREN;
+        closing = CPP_CLOSE_PAREN;
+      }else if(token->type == CPP_OPEN_SQUARE){
+        expand_tokens = true;
+        opening = CPP_OPEN_SQUARE;
+        closing = CPP_CLOSE_SQUARE;
+      }else{
         cpp_error_with_line(
           pfile
           ,CPP_DL_ERROR
@@ -4399,6 +4415,8 @@ collect_body_tokens(
       ,paste_op_error_msg
       ,paren_matching
       ,expand_tokens
+      ,opening
+      ,closing
     );
                           
   if (paren_matching)
@@ -4416,8 +4434,7 @@ collect_body_tokens(
 
 /*--------------------------------------------------------------------------------
 
-  This code was derived from create_iso_defined().
-  Given pfile returns a macro definition.
+  Given a pfile, returns a macro definition.
 
   #macro name (parameter [,parameter] ...) (body_expr)
   #macro name () (body_expr)
@@ -4427,6 +4444,11 @@ collect_body_tokens(
   Thi code is similar to `_cpp_create_definition` though uses paren blancing around the body, instead of requiring the macro body be on a single line.
 
   The cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {` it has a flexible array field in a union as a last member: cpp_token tokens[1];
+
+  This code was derived from create_iso_definition(). The break out portions shared
+  with create_macro_definition code should be shared with the main code, so that there
+  is only one place for edits.
+
 */
 static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
 
@@ -4505,7 +4527,6 @@ static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
         ,&num_extra_tokens 
         ,paste_op_error_msg 
         ,true // parenthesis delineated
-        ,false // tokens are not expanded as part of a macro definition
       )
     ) goto out;
 
@@ -4642,8 +4663,7 @@ _cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
 // `#assign` directive
 //    called from directives.cc::do_assign()
 
-bool
-_cpp_create_assign(cpp_reader *pfile){
+bool _cpp_create_assign(cpp_reader *pfile){
 
   /* name macro
 
@@ -4668,7 +4688,6 @@ _cpp_create_assign(cpp_reader *pfile){
       ,&num_extra_tokens 
       ,paste_op_error_msg 
       ,true // parenthesis delineated
-      ,true // tokens are expanded as part of a macro definition
     );
     fprintf(stderr,"name_macro->count %d\n" ,name_macro->count);
     fprintf(stderr,"assign directive name expr:\n");
@@ -4677,6 +4696,34 @@ _cpp_create_assign(cpp_reader *pfile){
   /* check name and keep a copy
 
    */
+#if 0
+    if (name_macro->count != 1)
+      {
+        cpp_error(pfile, CPP_DL_ERROR,
+                  "expected exactly one token in assign name expression, got %u",
+                  name_macro->count);
+        return false;
+      }
+
+    const cpp_token *name_tok = &name_macro->exp.tokens[0];
+
+    if (name_tok->type != CPP_NAME)
+      {
+        cpp_error(pfile, CPP_DL_ERROR,
+                  "expected identifier in assign name expression, got: %s",
+                  cpp_token_as_text(name_tok));
+        return false;
+      }
+
+    cpp_hashnode *name_node = name_tok->val.node.node;
+    const char *name_string = NODE_NAME(name_node); // for logging/debug/etc.
+    size_t name_len = NODE_LEN(name_node);
+
+    fprintf(stderr, "assign definition name = '%s'\n", macro_name);
+#endif
+    // The variable `macro_name` can now be used to define or install the macro
+    // later in the symbol table. Don’t forget to free it when you're done.
+
 
   /* parse the body macro
 
@@ -4697,7 +4744,6 @@ _cpp_create_assign(cpp_reader *pfile){
       ,&num_extra_tokens 
       ,paste_op_error_msg 
       ,true // parenthesis delineated
-      ,false // tokens are not expanded as part of a macro definition
     );
     fprintf(stderr,"assign directive body expr:\n");
     print_token_list(body_macro->exp.tokens ,body_macro->count);
