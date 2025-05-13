@@ -1,0 +1,3 @@
+
+- add the call back and warn logic for #assign in the macro.cc::name_clause_is_name function.
+

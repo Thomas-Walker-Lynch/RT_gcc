@@ -18,6 +18,8 @@ You should have received a copy of the GNU General Public License
 along with this program; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
+#pragma GCC diagnostic ignored "-Wparentheses"
+
 #include "config.h"
 #include "system.h"
 #include "cpplib.h"
@@ -165,7 +167,6 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
   D(assert        ,T_ASSERT        ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(unassert      ,T_UNASSERT      ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(sccs          ,T_SCCS          ,EXTENSION   ,IN_I)         /* SVR4? */ \
-  D(macro         ,T_MACRO         ,EXTENSION   ,IN_I)                     \
   D(assign        ,T_ASSIGN        ,EXTENSION   ,IN_I)
 
 
@@ -2920,54 +2921,44 @@ void print_token_list(const cpp_token *tokens ,size_t count){
 
 
 /*--------------------------------------------------------------------------------
- directive `#macro`
-   #macro name (parameter [,parameter] ...) (body_expr)
-   #macro name () (body_expr)
+  RT extention, directive `#assign`
 
-   The body expr can be empty, but the parents remain
-   Whitespace has no semantic meaning beyond its usual duty as a separator.
+    cmd        ::= "#assign" name body ;
+
+    name       ::= clause ;
+    body       ::= clause ;
+
+    clause     ::= "(" literal? ")" | "[" expr? "]" ;
+
+    literal    ::= ; sequence parsed into tokens
+    expr       ::= ; sequence parsed into tokens with recursive expansion of each token
+
+    ; white space, including new lines, is ignored.
+
+will be deprecate `#macro` and modify `#assign` like this:
+
+    cmd        ::= "#assign" params name body ;
+
+    params     ::= "(" param_list? ")" ;
+    param_list ::= identifier ("," identifier)* ;
+
+    name       ::= clause ;
+    body       ::= clause ;
+
+    clause     ::= "(" literal? ")" | "[" expr? "]" ;
+
+    literal    ::= ; sequence parsed into tokens
+    expr       ::= ; sequence parsed into tokens with recursive expansion of each token
+
+    ; white space, including new lines, is ignored.
+
+
+     This differs from `#define`:
+       -#assign takes no arguments.
+       -name clause must reduce to a valid #define name
+       -the assign is defined after the body clause has been parsed
+
 */
-extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
-
-static void
-do_macro (cpp_reader *pfile)
-{
-  cpp_hashnode *node = lex_macro_node(pfile, true);
-
-  if(node)
-    {
-      /* If we have been requested to expand comments into macros,
-	 then re-enable saving of comments.  */
-      pfile->state.save_comments =
-	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
-
-      if(pfile->cb.before_define)
-	pfile->cb.before_define (pfile);
-
-      if( _cpp_create_macro(pfile, node) )
-	if (pfile->cb.define)
-	  pfile->cb.define (pfile, pfile->directive_line, node);
-
-      node->flags &= ~NODE_USED;
-    }
-}
-
-
-//--------------------------------------------------------------------------------
-// RT extention, directive `#assign`
-//
-//   #assign (name_expr) (body_expr)
-//
-//   The body expr can be empty, but name_expr can not be.
-//   Whitespace has no semantic meaning beyond its usual duty as a separator.
-//
-//   This differs from `#define`:
-//     -Assign takes no arguments.
-//     -Name_expr and body_expr are expanded as though macros
-//     -The name expr must expand to become a valid macro name.
-//     -The name is entered into the symbol table with the value of
-//      the expanded body after the expansion.
-
 
 extern bool _cpp_create_assign(cpp_reader *pfile);
 
