@@ -4624,10 +4624,10 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,cmk_macro
       ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
     );
-    name_macro->variadic = is_variadic;
-    name_macro->parm.params = params;
-    name_macro->paramc = param_count;
-    name_macro->fun_like = true;
+    name_macro->variadic = false;
+    name_macro->paramc = 0;
+    name_macro->parm.params = NULL;
+    name_macro->fun_like = false;
 
     unsigned int num_extra_tokens = 0;
     const char *paste_op_error_msg =
@@ -4708,10 +4708,10 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,cmk_macro
       ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
     );
-    body_macro->variadic = is_variadic;
-    body_macro->paramc = param_count;
-    body_macro->parm.params = params;
-    body_macro->fun_like = true;
+    body_macro->variadic = false;
+    body_macro->paramc = 0;
+    body_macro->parm.params = NULL;
+    body_macro->fun_like = false;
 
     parse_clause(
       pfile 
@@ -4735,9 +4735,9 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,body_macro->exp.tokens
       ,sizeof(cpp_token) * body_macro->count
     );
-    assign_macro->variadic = body_macro->variadic;
-    assign_macro->parm.params = body_macro->parm.params;
-    assign_macro->paramc = body_macro->paramc;
+    assign_macro->variadic = is_variadic;
+    assign_macro->parm.params = params;
+    assign_macro->paramc = param_count;
     assign_macro->fun_like = true;
 
 

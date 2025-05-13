@@ -2938,11 +2938,14 @@ void print_token_list(const cpp_token *tokens ,size_t count){
 
     ; white space, including new lines, is ignored.
 
-
      This differs from `#define`:
-       -#assign takes no arguments.
        -name clause must reduce to a valid #define name
        -the assign is defined after the body clause has been parsed
+
+and for the call:
+
+    macro_call     ::= identifier "(" argument_list? ")" 
+
 
 */
 

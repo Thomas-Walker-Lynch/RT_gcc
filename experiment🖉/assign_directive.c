@@ -3,7 +3,7 @@
 #assign ()(Number)(0x2d9)
 
 #assign ()(NAME)(ONE)
-#assign ()[NAME]( 1 )
+#assign ()[ NAME() ](1)
 
 #undef NAME
 #define NAME TwentySeven
