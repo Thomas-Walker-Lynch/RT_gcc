@@ -2923,20 +2923,6 @@ void print_token_list(const cpp_token *tokens ,size_t count){
 /*--------------------------------------------------------------------------------
   RT extention, directive `#assign`
 
-    cmd        ::= "#assign" name body ;
-
-    name       ::= clause ;
-    body       ::= clause ;
-
-    clause     ::= "(" literal? ")" | "[" expr? "]" ;
-
-    literal    ::= ; sequence parsed into tokens
-    expr       ::= ; sequence parsed into tokens with recursive expansion of each token
-
-    ; white space, including new lines, is ignored.
-
-will be deprecate `#macro` and modify `#assign` like this:
-
     cmd        ::= "#assign" params name body ;
 
     params     ::= "(" param_list? ")" ;
@@ -2966,29 +2952,6 @@ extern bool _cpp_create_assign(cpp_reader *pfile);
 static void do_assign(cpp_reader *pfile){
 
   _cpp_create_assign(pfile);
-
-#if 0
-
-
-  cpp_hashnode *node = lex_macro_node(pfile, true);
-
-  if(node)
-    {
-      /* If we have been requested to expand comments into macros,
-	 then re-enable saving of comments.  */
-      pfile->state.save_comments =
-	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
-
-      if(pfile->cb.before_define)
-	pfile->cb.before_define (pfile);
-
-      if( _cpp_create_assign(pfile, node) )
-	if (pfile->cb.define)
-	  pfile->cb.define (pfile, pfile->directive_line, node);
-
-      node->flags &= ~NODE_USED;
-    }
-#endif
 
 }
 

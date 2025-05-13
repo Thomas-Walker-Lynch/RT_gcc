@@ -4611,9 +4611,9 @@ bool _cpp_create_assign(cpp_reader *pfile){
     unsigned int param_count;
     bool is_variadic;
 
-    if(!make_parameter_list(pfile ,&params ,&param_count ,&is_variadic)
+    if (!make_parameter_list(pfile, &params, &param_count, &is_variadic)) {
       return false;
-
+    }
 
   /* Parse name clause into a temporary macro. 
 
@@ -4625,8 +4625,8 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
     );
     name_macro->variadic = is_variadic;
-    name_macro->paramc = param_count;
     name_macro->parm.params = params;
+    name_macro->paramc = param_count;
     name_macro->fun_like = true;
 
     unsigned int num_extra_tokens = 0;
@@ -4735,6 +4735,11 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,body_macro->exp.tokens
       ,sizeof(cpp_token) * body_macro->count
     );
+    assign_macro->variadic = body_macro->variadic;
+    assign_macro->parm.params = body_macro->parm.params;
+    assign_macro->paramc = body_macro->paramc;
+    assign_macro->fun_like = true;
+
 
   /* Install the assign macro under name_node.
 
@@ -4764,9 +4769,19 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,NODE_NAME(name_node)
     );
   #endif
+
   return true;
 
 }
+
+
+
+
+
+
+
+
+
 
 
 
