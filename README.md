@@ -23,7 +23,7 @@ Environment variables are defined in `script🖉/environment.sh` — this file g
 
 ---
 
-## The `#macro` and `#assign` Directives
+## The `#rt_macro` and `#assign` Directives
 
 These are two experimental extensions to the C preprocessor (CPP), part of the **RT Extensions**.
 
@@ -39,7 +39,7 @@ To enable them:
 
 ---
 
-### `#macro`
+### `#rt_macro`
 
 Defines a macro in standard ISO form, using token literal parsing and optional parameter substitution. Equivalent to a cleaner `#define`, with controlled multi-line support and macro parameter semantics.
 
@@ -47,7 +47,7 @@ Defines a macro in standard ISO form, using token literal parsing and optional p
 
 ```
 
-directive     ::= "#macro" name params body ;
+directive     ::= "#rt_macro" name params body ;
 
 name          ::= identifier ;
 
