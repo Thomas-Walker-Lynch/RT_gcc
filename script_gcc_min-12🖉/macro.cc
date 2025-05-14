@@ -4277,7 +4277,7 @@ static enum parse_clause_status parse_clause_body_expand(
       // lexer supports line macros by inserting CPP_EOF at line ends
       if(paren_matching && token->type == CPP_EOF){
         #if DebugParseClause
-          fprintf( stderr, "changing CPP_EOF to newline\n");
+          fprintf( stderr, "CPP_EOF during parse with parentheses matching \n");
         #endif
         if(!_cpp_get_fresh_line(pfile)){
           return PCS_ERR_EOF_FETCH_FAILED;
@@ -4324,6 +4324,8 @@ static enum parse_clause_status parse_clause_body_expand(
 
 }
 
+bool cgls_flag = false;
+
 // if not paren_matching, then ends with CPP_EOF
 static enum parse_clause_status parse_clause_body_literal(
   cpp_reader *pfile
@@ -4331,7 +4333,6 @@ static enum parse_clause_status parse_clause_body_literal(
   ,bool paren_matching
   ,enum cpp_ttype opening
   ,enum cpp_ttype closing
-  ,const char *paste_op_error_msg
   ,unsigned int *num_extra_tokens_out
 ){
 
@@ -4347,6 +4348,9 @@ static enum parse_clause_status parse_clause_body_literal(
   unsigned int num_extra_tokens = 0;
   int paren_depth = 1; 
   cpp_token *lex_token;
+  const char *paste_op_error_msg =
+      N_("'##' cannot appear at either end of a macro expansion");
+
 
   for(vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);;){
     
@@ -4365,7 +4369,7 @@ static enum parse_clause_status parse_clause_body_literal(
       // lexer will insert CPP_EOF at the end of each line, because cpp originally only did line macros.
       if(paren_matching && lex_token->type == CPP_EOF){
         #if DebugParseClause
-          fprintf( stderr, "changing CPP_EOF to newline\n");
+          fprintf( stderr, "CPP_EOF during parse with parentheses matching \n");
         #endif
         if(!_cpp_get_fresh_line(pfile)){
           return PCS_ERR_EOF_FETCH_FAILED;
@@ -4494,13 +4498,13 @@ static enum parse_clause_status parse_clause_body_literal(
   here. The status enum's current purpose is to feed debug messages.
 
 */
+
 static parse_clause_status
 parse_clause(
   cpp_reader *pfile
   ,cpp_macro *macro
-  ,unsigned int *num_extra_tokens_out
-  ,const char *paste_op_error_msg
   ,bool paren_matching
+  ,unsigned int *num_extra_tokens_out
 ){
 
   #if DebugParseClause
@@ -4559,7 +4563,6 @@ parse_clause(
         ,paren_matching
         ,opening
         ,closing
-        ,paste_op_error_msg
         ,num_extra_tokens_out
       );
   }
@@ -4646,16 +4649,13 @@ bool _cpp_create_assign(cpp_reader *pfile){
     name_macro->fun_like = false;
 
     unsigned int num_extra_tokens = 0;
-    const char *paste_op_error_msg =
-      N_("'##' cannot appear at either end of a macro expansion");
 
     // This routine requires a macro argument, hence the creation of a temporary macro.
     parse_clause(
       pfile 
       ,name_macro 
+      ,true // use paren matching
       ,&num_extra_tokens 
-      ,paste_op_error_msg 
-      ,true // parenthesis delineated
     );
     #if DebugAssign
       fprintf(stderr,"name_macro->count: %d\n" ,name_macro->count);
@@ -4732,9 +4732,8 @@ bool _cpp_create_assign(cpp_reader *pfile){
     parse_clause(
       pfile 
       ,body_macro 
-      ,&num_extra_tokens 
-      ,paste_op_error_msg 
       ,true // parenthesis delineated
+      ,&num_extra_tokens 
     );
     #if DebugAssign
       fprintf(stderr,"assign directive body tokens:\n");
@@ -4809,15 +4808,54 @@ bool _cpp_create_assign(cpp_reader *pfile){
   is only one place for edits.
 
 */
-static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
+static enum parse_clause_status
+parse_paren_clause(
+  cpp_reader *pfile,
+  cpp_macro *macro,
+  unsigned int *num_extra_tokens_out
+){
+  cpp_token *token = _cpp_lex_direct(pfile);
+  if (token->type != CPP_OPEN_PAREN) {
+    cpp_error_with_line(
+      pfile,
+      CPP_DL_ERROR,
+      token->src_loc,
+      0,
+      "expected '(' to open macro body, but found: %s",
+      cpp_token_as_text(token)
+    );
+    return PCS_ERR_EXPECTED_OPEN_DELIM;
+  }
+
+  // allow a multiple line body
+  int saved_keep_tokens    = pfile->keep_tokens;
+  int saved_in_directive   = pfile->state.in_directive;
+
+  // turn on multi-line parsing
+  pfile->keep_tokens       = 1;
+  pfile->state.in_directive = 0;
+
+  parse_clause_status status = parse_clause_body_literal(
+    pfile,
+    macro,
+    true, // paren_matching
+    CPP_OPEN_PAREN,
+    CPP_CLOSE_PAREN,
+    num_extra_tokens_out
+  );
+
+  pfile->keep_tokens      = saved_keep_tokens;
+  pfile->state.in_directive = saved_in_directive;
+
+  return status;
+}
+
+static cpp_macro *create_rt_macro (cpp_reader *pfile){
 
   #if DebugRTMacro
-    fprintf(stderr,"entering create_iso_RT_macro\n");
+    fprintf(stderr,"entering create_rt_macro\n");
   #endif
 
-
-  const char *paste_op_error_msg =
-    N_("'##' cannot appear at either end of a macro expansion");
   unsigned int num_extra_tokens = 0;
   unsigned paramc = 0;
   cpp_hashnode **params = NULL;
@@ -4862,7 +4900,7 @@ static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
     params = (cpp_hashnode **)_cpp_commit_buff( pfile, sizeof (cpp_hashnode *) * paramc );
     token = NULL;
 
-  /* parse macro body
+  /* parse body macro
 
      A macro struct instance is variable size, due to tokens added to the macro.exp.tokens
      during parse, and possible reallocations.
@@ -4874,38 +4912,16 @@ static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
       ,cmk_macro
       ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
     );
-    // used by complete_parse_clause
+    // used by parse_clause_literal
     macro->variadic = varadic;
     macro->paramc = paramc;
     macro->parm.params = params;
     macro->fun_like = true;
 
 
-    token = _cpp_lex_direct (pfile);
-    if(token->type != CPP_OPEN_PAREN){
-      cpp_error_with_line(
-        pfile
-        ,CPP_DL_ERROR
-        ,token->src_loc
-        ,0
-        ,"expected '(' to open macro body, but found: %s"
-        ,cpp_token_as_text(token)
-      );
-      goto out;
-    }
-
-    status = parse_clause_body_literal(
-      pfile 
-      ,macro 
-      ,true // parenthesis delimiters
-      ,CPP_OPEN_PAREN
-      ,CPP_CLOSE_PAREN
-      ,paste_op_error_msg 
-      ,&num_extra_tokens 
-    );
-    
+    status = parse_paren_clause(pfile ,macro ,&num_extra_tokens);
     if( status != PCS_OK ){
-      fprintf(stderr, "create_iso_RT_macro parse clause failed: ");
+      fprintf(stderr, "parse_paren_clause returned: ");
       print_parse_clause_status(status);  
       goto out;
     }
@@ -4915,7 +4931,7 @@ static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
       print_token_list(macro->exp.tokens ,macro->count);
     #endif
 
-    // commit the buffer, attach the parameter list
+    // commit the macro, attach the parameter list
     ok = true;
     macro = (cpp_macro *)_cpp_commit_buff(
       pfile
@@ -4930,10 +4946,10 @@ static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
     macro->parm.params = params;
     macro->fun_like = true;
 
-  // some end cases we must clean up
-  //
+  /* some end cases we must clean up
+  */
     /*
-      It might be that the first token of the macro body was preceded by white space,so
+      It might be that the first token of the macro body was preceded by white space, so
       the white space flag is set. However, upon expansion, there might not be a white
       space before said token, so the following code clears the flag.
     */
@@ -4997,14 +5013,14 @@ static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
   called from directives.cc:: do_macro
 */
 bool
-_cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
+_cpp_create_rt_macro(cpp_reader *pfile, cpp_hashnode *node){
 
   #if DebugRTMacro
     fprintf(stderr,"entering _cpp_create_macro\n");
   #endif
 
   cpp_macro *macro;
-  macro = create_iso_RT_macro (pfile);
+  macro = create_rt_macro (pfile);
 
   if (!macro)
     return false;

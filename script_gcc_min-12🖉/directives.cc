@@ -167,7 +167,7 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
   D(assert        ,T_ASSERT        ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(unassert      ,T_UNASSERT      ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(sccs          ,T_SCCS          ,EXTENSION   ,IN_I)         /* SVR4? */ \
-  D(macro         ,T_MACRO         ,EXTENSION   ,IN_I)                     \
+  D(rt_macro      ,T_MACRO         ,EXTENSION   ,IN_I)                     \
   D(assign        ,T_ASSIGN        ,EXTENSION   ,IN_I)
 
 
@@ -2976,10 +2976,10 @@ static void do_assign(cpp_reader *pfile){
 
 
 */
-extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
+extern bool _cpp_create_rt_macro (cpp_reader *pfile, cpp_hashnode *node);
 
 static void
-do_macro (cpp_reader *pfile)
+do_rt_macro (cpp_reader *pfile)
 {
   cpp_hashnode *node = lex_macro_node(pfile, true);
 
@@ -2993,7 +2993,7 @@ do_macro (cpp_reader *pfile)
       if(pfile->cb.before_define)
 	pfile->cb.before_define (pfile);
 
-      if( _cpp_create_macro(pfile, node) )
+      if( _cpp_create_rt_macro(pfile, node) )
 	if (pfile->cb.define)
 	  pfile->cb.define (pfile, pfile->directive_line, node);
 

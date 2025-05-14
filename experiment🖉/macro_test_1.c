@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#macro I(x) (x)
+#rt_macro I(x) (x)
 
 int main(void){
   printf("5: %x" ,I(5));
