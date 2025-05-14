@@ -4140,8 +4140,9 @@ cpp_macro_definition (cpp_reader *pfile, cpp_hashnode *node,
 // RT extensions 
 //--------------------------------------------------------------------------------
 
-#define DebugParseClause 0
+#define DebugParseClause 1
 #define DebugAssign 1
+#define DebugRTMacro 1
 
 // see directives.cc
 extern const char *cpp_token_as_text(const cpp_token *token);
@@ -4187,156 +4188,101 @@ debug_peek_token (cpp_reader *pfile)
 
 // collects the body of a #define or related directive 
 typedef enum parse_clause_status {
-  CBT_OK = 0,                        // Normal successful collection
+  PCS_OK = 0,                        // Normal successful collection
 
-  CBT_ERR_EXPECTED_OPEN_PAREN,      // Failed to find expected opening '('
-  CBT_ERR_UNEXPECTED_EOF,           // Hit real EOF before matching ')'
-  CBT_ERR_PASTE_AT_END,             // Trailing '##' paste operator
-  CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG, // '#' not followed by macro parameter
-  CBT_ERR_VAOPT_STATE_INVALID,      // __VA_OPT__ or variadic tracking error
-  CBT_ERR_EOF_FETCH_FAILED,         // Failed to fetch next line after EOF
-  CBT_ERR_UNKNOWN                   // Fallback error (should not occur)
+  PCS_ERR_EXPECTED_OPEN_DELIM,      // Failed to find expected opening '('
+  PCS_ERR_UNEXPECTED_EOF,           // Hit real EOF before matching ')'
+  PCS_ERR_PASTE_AT_END,             // Trailing '##' paste operator
+  PCS_ERR_HASH_NOT_FOLLOWED_BY_ARG, // '#' not followed by macro parameter
+  PCS_ERR_VAOPT_STATE_INVALID,      // __VA_OPT__ or variadic tracking error
+  PCS_ERR_EOF_FETCH_FAILED,         // Failed to fetch next line after EOF
+  PCS_ERR_UNKNOWN                   // Fallback error (should not occur)
 } parse_clause_status;
 
-void debug_print_parse_clause_status(enum parse_clause_status status)
+void print_parse_clause_status(enum parse_clause_status status)
 {
 #if 1
   const char *message = NULL;
   switch (status)
     {
-    case CBT_OK:
-      message = "parse_clause: completed successfully.";
+    case PCS_OK:
+      message = "parse_clause status is OK";
       break;
-    case CBT_ERR_EXPECTED_OPEN_PAREN:
-      message = "parse_clause: expected opening '(' but did not find it.";
+    case PCS_ERR_EXPECTED_OPEN_DELIM:
+      message = "expected opening delimiter such as '(' but did not find it.";
       break;
-    case CBT_ERR_UNEXPECTED_EOF:
-      message = "parse_clause: unexpected EOF before closing ')'.";
+    case PCS_ERR_UNEXPECTED_EOF:
+      message = "unexpected EOF before closing ')'.";
       break;
-    case CBT_ERR_PASTE_AT_END:
-      message = "parse_clause: paste operator '##' appeared at the beginning or end of macro body.";
+    case PCS_ERR_PASTE_AT_END:
+      message = "paste operator '##' appeared at the beginning or end of macro body.";
       break;
-    case CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG:
-      message = "parse_clause: '#' was not followed by a valid macro parameter.";
+    case PCS_ERR_HASH_NOT_FOLLOWED_BY_ARG:
+      message = "'#' was not followed by a valid macro parameter.";
       break;
-    case CBT_ERR_VAOPT_STATE_INVALID:
-      message = "parse_clause: invalid __VA_OPT__ tracking state.";
+    case PCS_ERR_VAOPT_STATE_INVALID:
+      message = "invalid __VA_OPT__ tracking state.";
       break;
-    case CBT_ERR_EOF_FETCH_FAILED:
-      message = "parse_clause: _cpp_get_fresh_line() failed to fetch next line.";
+    case PCS_ERR_EOF_FETCH_FAILED:
+      message = "_cpp_get_fresh_line() failed to fetch next line.";
       break;
-    case CBT_ERR_UNKNOWN:
+    case PCS_ERR_UNKNOWN:
     default:
-      message = "parse_clause: unknown or unhandled error.";
+      message = "unknown or unhandled error.";
       break;
     }
   fprintf(stderr, "%s\n", message);
 #endif
 }
 
-static enum parse_clause_status parse_clause_1(
+// if not paren_matching, then ends with CPP_EOF
+static enum parse_clause_status parse_clause_body_expand(
   cpp_reader *pfile
   ,cpp_macro *macro
-  ,unsigned int *num_extra_tokens_out
-  ,const char *paste_op_error_msg
   ,bool paren_matching
-  ,bool expand_tokens
   ,enum cpp_ttype opening
   ,enum cpp_ttype closing
 ){
-  bool following_paste_op = false;
-  unsigned int num_extra_tokens = 0;
+
+  #if DebugParseClause
+    fprintf(stderr, "entering parse_clause_body_expand\n");
+    if(paren_matching) 
+      fprintf(stderr, "  paren_matching\n");
+    else
+      fprintf(stderr, "  no paren_matching\n");
+  #endif
+
   int paren_depth = 1; 
-  cpp_token *lex_token;
   const cpp_token *token;
   location_t src_loc;
 
-  for(vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);;){
+  for(;;){
+    
     /* get a token
     */
-      if(expand_tokens){
-        token = cpp_get_token_1 (pfile, &src_loc);
+      token = cpp_get_token_1 (pfile, &src_loc);
+      // this is necessary for the name expr, but does it impact potential other uses of parse_clause?  Another flag for this perhaps?
+      if(token->type == CPP_PADDING) continue;
+      macro = (cpp_macro *)_cpp_reserve_room(
+        pfile,
+        sizeof(cpp_macro) + macro->count * sizeof(cpp_token),
+        sizeof(cpp_token)
+      );
+      macro->exp.tokens[macro->count] = *token;
 
-        // this is necessary for the name expr, but does it impact potential other uses of parse_clause?  Another flag for this perhaps?
-        if(token->type == CPP_PADDING) continue;
+      #if DebugParseClause
+        fprintf( stderr, "token: %s\n", cpp_token_as_text(token) );
+      #endif
 
+      // lexer supports line macros by inserting CPP_EOF at line ends
+      if(paren_matching && token->type == CPP_EOF){
         #if DebugParseClause
-          fprintf( stderr, "token %s\n", cpp_token_as_text(token) );
+          fprintf( stderr, "changing CPP_EOF to newline\n");
         #endif
-
-        macro = (cpp_macro *)_cpp_reserve_room(
-          pfile,
-          sizeof(cpp_macro) + macro->count * sizeof(cpp_token),
-          sizeof(cpp_token)
-        );
-        macro->exp.tokens[macro->count] = *token;
-        macro->count++;
-
-      }else{
-        // first parses lex_token onto `macro->exp.tokens[macro->count]`
-        // then pulls the token off of `macro->exp.tokens[macro->count]`
-        // reassigns macro due to possible macro->exp.tokens buffer expansion
-        macro = lex_expansion_token(pfile, macro);
-        lex_token = &macro->exp.tokens[macro->count++];
-        #if DebugParseClause
-          fprintf( stderr, "lex_token %s\n", cpp_token_as_text(lex_token) );
-        #endif
-
-        // recognize macro args, give them type CPP_MACRO_ARG
-        if (macro->count > 1 && lex_token[-1].type == CPP_HASH && macro->fun_like)
-          {
-            if (lex_token->type == CPP_MACRO_ARG
-                || (macro->variadic
-                    && lex_token->type == CPP_NAME
-                    && lex_token->val.node.node == pfile->spec_nodes.n__VA_OPT__))
-              {
-                if (lex_token->flags & PREV_WHITE)
-                  lex_token->flags |= SP_PREV_WHITE;
-                if (lex_token[-1].flags & DIGRAPH)
-                  lex_token->flags |= SP_DIGRAPH;
-                lex_token->flags &= ~PREV_WHITE;
-                lex_token->flags |= STRINGIFY_ARG;
-                lex_token->flags |= lex_token[-1].flags & PREV_WHITE;
-                lex_token[-1] = lex_token[0];
-                macro->count--;
-              }
-            else if (CPP_OPTION (pfile, lang) != CLK_ASM)
-              {
-                cpp_error(pfile, CPP_DL_ERROR,
-                          "'#' is not followed by a macro parameter");
-                return CBT_ERR_HASH_NOT_FOLLOWED_BY_ARG;
-              }
-          }
-
-        if (lex_token->type == CPP_PASTE)
-          {
-            if (macro->count == 1)
-              {
-                cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
-                return CBT_ERR_PASTE_AT_END; // the font end of the buffer
-              }
-
-            if (following_paste_op)
-              {
-                num_extra_tokens++;
-                lex_token->val.token_no = macro->count - 1;
-              }
-            else
-              {
-                --macro->count;
-                lex_token[-1].flags |= PASTE_LEFT;
-                if (lex_token->flags & DIGRAPH)
-                  lex_token[-1].flags |= SP_DIGRAPH;
-                if (lex_token->flags & PREV_WHITE)
-                  lex_token[-1].flags |= SP_PREV_WHITE;
-              }
-            following_paste_op = true;
-          }
-        else{
-          following_paste_op = false;
+        if(!_cpp_get_fresh_line(pfile)){
+          return PCS_ERR_EOF_FETCH_FAILED;
         }
-
-        token = lex_token;
+        continue;
       }
 
     /* parentheses matching overhead
@@ -4350,7 +4296,7 @@ static enum parse_clause_status parse_clause_1(
           paren_depth--;
           if (paren_depth < 0) {
             cpp_error(pfile, CPP_DL_ERROR, "unmatched closing delimiter");
-            return CBT_ERR_UNEXPECTED_EOF;
+            return PCS_ERR_UNEXPECTED_EOF;
           }
         }
 
@@ -4359,25 +4305,8 @@ static enum parse_clause_status parse_clause_1(
             fprintf( stderr, "new paren_depth: %d\n", paren_depth);
           }
         #endif
-
-        if(token->type == CPP_EOF){
-          #if DebugParseClause
-            fprintf(stderr, "Found CPP_EOF at paren depth %d\n", paren_depth);
-          #endif
-          macro->count--;
-          if(!_cpp_get_fresh_line(pfile)){
-            return CBT_ERR_EOF_FETCH_FAILED;
-          }
-          #if DebugParseClause
-            fprintf(
-              stderr
-              ,"Found CPP_EOF at depth %d read new line now continuing loop \n"
-              ,paren_depth
-            );
-          #endif
-          continue;
-        }
       }
+
 
     /* Determine if routine has lexed the final macro body token and should exit.
     */
@@ -4385,29 +4314,170 @@ static enum parse_clause_status parse_clause_1(
         paren_matching && paren_depth == 0 && token->type == closing
         || !paren_matching && token->type == CPP_EOF
       ){
-        if( macro->count != 0 ) macro->count--; // drop the terminator
-
-        if(!paren_matching){
-
-          if(following_paste_op){
-            cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
-            return CBT_ERR_PASTE_AT_END;
-          }
-
-          if (vaopt_tracker.update(token) == vaopt_state::ERROR){
-            return CBT_ERR_VAOPT_STATE_INVALID;
-          }
-
-          if( !vaopt_tracker.completed() ){
-            return CBT_ERR_VAOPT_STATE_INVALID;
-          }
-
-          *num_extra_tokens_out = num_extra_tokens;
-        }
-
-        return CBT_OK;
+        return PCS_OK;
       }
 
+      // commit the new token
+      macro->count++;
+
+  }// end for next token loop
+
+}
+
+// if not paren_matching, then ends with CPP_EOF
+static enum parse_clause_status parse_clause_body_literal(
+  cpp_reader *pfile
+  ,cpp_macro *macro
+  ,bool paren_matching
+  ,enum cpp_ttype opening
+  ,enum cpp_ttype closing
+  ,const char *paste_op_error_msg
+  ,unsigned int *num_extra_tokens_out
+){
+
+  #if DebugParseClause
+    fprintf(stderr, "entering parse_clause_body_literal\n");
+    if(paren_matching) 
+      fprintf(stderr, "  paren_matching\n");
+    else
+      fprintf(stderr, "  no paren_matching\n");
+  #endif
+
+  bool following_paste_op = false;
+  unsigned int num_extra_tokens = 0;
+  int paren_depth = 1; 
+  cpp_token *lex_token;
+
+  for(vaopt_state vaopt_tracker (pfile, macro->variadic, NULL);;){
+    
+    /* get a token
+    */
+      // first parses lex_token onto `macro->exp.tokens[macro->count]`
+      // then pulls the token off of `macro->exp.tokens[macro->count]`
+      // reassigns macro due to possible macro->exp.tokens buffer expansion
+      macro = lex_expansion_token(pfile, macro);
+      lex_token = &macro->exp.tokens[macro->count];
+
+      #if DebugParseClause
+        fprintf( stderr, "lex_token: %s\n", cpp_token_as_text(lex_token) );
+      #endif
+
+      // lexer will insert CPP_EOF at the end of each line, because cpp originally only did line macros.
+      if(paren_matching && lex_token->type == CPP_EOF){
+        #if DebugParseClause
+          fprintf( stderr, "changing CPP_EOF to newline\n");
+        #endif
+        if(!_cpp_get_fresh_line(pfile)){
+          return PCS_ERR_EOF_FETCH_FAILED;
+        }
+        continue;
+      }
+
+    /* tag macro args
+    */
+      if (macro->count > 1 && lex_token[-1].type == CPP_HASH && macro->fun_like)
+        {
+          if (lex_token->type == CPP_MACRO_ARG
+              || (macro->variadic
+                  && lex_token->type == CPP_NAME
+                  && lex_token->val.node.node == pfile->spec_nodes.n__VA_OPT__))
+            {
+              if (lex_token->flags & PREV_WHITE)
+                lex_token->flags |= SP_PREV_WHITE;
+              if (lex_token[-1].flags & DIGRAPH)
+                lex_token->flags |= SP_DIGRAPH;
+              lex_token->flags &= ~PREV_WHITE;
+              lex_token->flags |= STRINGIFY_ARG;
+              lex_token->flags |= lex_token[-1].flags & PREV_WHITE;
+              lex_token[-1] = lex_token[0];
+              macro->count--;
+            }
+          else if (CPP_OPTION (pfile, lang) != CLK_ASM)
+            {
+              cpp_error(pfile, CPP_DL_ERROR,
+                        "'#' is not followed by a macro parameter");
+              return PCS_ERR_HASH_NOT_FOLLOWED_BY_ARG;
+            }
+        }
+
+    /* paste end cases
+    */
+      if (lex_token->type == CPP_PASTE)
+        {
+          if (macro->count == 0)
+            {
+              cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+              return PCS_ERR_PASTE_AT_END; // the font end of the buffer
+            }
+
+          if (following_paste_op)
+            {
+              num_extra_tokens++;
+              lex_token->val.token_no = macro->count - 1;
+            }
+          else
+            {
+              --macro->count;
+              lex_token[-1].flags |= PASTE_LEFT;
+              if (lex_token->flags & DIGRAPH)
+                lex_token[-1].flags |= SP_DIGRAPH;
+              if (lex_token->flags & PREV_WHITE)
+                lex_token[-1].flags |= SP_PREV_WHITE;
+            }
+          following_paste_op = true;
+        }
+      else{
+        following_paste_op = false;
+      }
+
+    /* parentheses matching overhead
+    */
+      if(paren_matching){
+
+        if (lex_token->type == opening) {
+          paren_depth++;
+        }
+        else if (lex_token->type == closing) {
+          paren_depth--;
+          if (paren_depth < 0) {
+            cpp_error(pfile, CPP_DL_ERROR, "unmatched closing delimiter");
+            return PCS_ERR_UNEXPECTED_EOF;
+          }
+        }
+
+        #if DebugParseClause
+          if( lex_token->type == opening || lex_token->type == closing){
+            fprintf( stderr, "new paren_depth: %d\n", paren_depth);
+          }
+        #endif
+      }
+
+
+    /* Determine if routine has lexed the final macro body token and should exit.
+    */
+      if(
+        paren_matching && paren_depth == 0 && lex_token->type == closing
+        || !paren_matching && lex_token->type == CPP_EOF
+      ){
+
+        if(following_paste_op){
+          cpp_error(pfile, CPP_DL_ERROR, paste_op_error_msg);
+          return PCS_ERR_PASTE_AT_END;
+        }
+        if (vaopt_tracker.update(lex_token) == vaopt_state::ERROR){
+          return PCS_ERR_VAOPT_STATE_INVALID;
+        }
+        if( !vaopt_tracker.completed() ){
+          return PCS_ERR_VAOPT_STATE_INVALID;
+        }
+
+        *num_extra_tokens_out = num_extra_tokens;
+
+        return PCS_OK;
+      }
+
+      // commit the new token
+      macro->count++;
 
   }// end for next token loop
 
@@ -4424,7 +4494,7 @@ static enum parse_clause_status parse_clause_1(
   here. The status enum's current purpose is to feed debug messages.
 
 */
-static bool
+static parse_clause_status
 parse_clause(
   cpp_reader *pfile
   ,cpp_macro *macro
@@ -4432,12 +4502,19 @@ parse_clause(
   ,const char *paste_op_error_msg
   ,bool paren_matching
 ){
+
+  #if DebugParseClause
+    fprintf(stderr, "entering parse_clause\n");
+  #endif
+
   int saved_keep_tokens = pfile->keep_tokens;
   int saved_in_directive = pfile->state.in_directive;
   bool expand_tokens;
   cpp_token *token;
   enum cpp_ttype opening ,closing;
+  parse_clause_status status;
 
+  expand_tokens = false; // default for #define EOL terminated body
   if (paren_matching)
     {
       // the next token must be the opening paren
@@ -4459,7 +4536,7 @@ parse_clause(
           ,"expected body delimiter '(', but found: %s"
           ,cpp_token_as_text(token)
         );
-        return false;
+        return PCS_ERR_EXPECTED_OPEN_DELIM;
       }
 
       // allow a multiple line body
@@ -4467,27 +4544,37 @@ parse_clause(
       pfile->state.in_directive = 0;
     }
 
-  parse_clause_status status = parse_clause_1(
-      pfile
-      ,macro
-      ,num_extra_tokens_out
-      ,paste_op_error_msg
-      ,paren_matching
-      ,expand_tokens
-      ,opening
-      ,closing
-    );
+  if(expand_tokens){
+    status = parse_clause_body_expand(
+        pfile
+        ,macro
+        ,paren_matching
+        ,opening
+        ,closing
+      );
+  }else{
+    status = parse_clause_body_literal(
+        pfile
+        ,macro
+        ,paren_matching
+        ,opening
+        ,closing
+        ,paste_op_error_msg
+        ,num_extra_tokens_out
+      );
+  }
+
+  #if DebugParseClause
+    fprintf(stderr, "parse_clause returning: ");
+    print_parse_clause_status(status);  
+  #endif
                           
   if(paren_matching){
     pfile->keep_tokens = saved_keep_tokens;
     pfile->state.in_directive = saved_in_directive;
   }
 
-  #if DebugParseClause
-    debug_print_parse_clause_status(status);  
-  #endif
-
-  return status == CBT_OK;
+  return PCS_OK;
 }
 
 /*
@@ -4541,79 +4628,8 @@ name_clause_is_name(cpp_reader *pfile, const cpp_macro *macro)
 
 */
 
-/*
-  Parse a macro-style parameter list for `#assign`
-
-  This expects the next token to be an opening parenthesis `(`.
-
-  It returns:
-    - `params_out`:  pointer to committed parameter array
-    - `param_count_out`: number of parameters parsed
-    - `is_variadic_out`: true if a variadic param was encountered
-
-  On success, returns true and fills the out parameters.
-  On failure, returns false and issues an error diagnostic.
-*/
-bool
-make_parameter_list(
-  cpp_reader *pfile,
-  cpp_hashnode ***params_out,
-  unsigned int *param_count_out,
-  bool *is_variadic_out
-){
-  cpp_token first;
-  cpp_token *saved_cur_token = pfile->cur_token;
-  pfile->cur_token = &first;
-  cpp_token *token = _cpp_lex_direct(pfile);
-  pfile->cur_token = saved_cur_token;
-
-  if (token->type != CPP_OPEN_PAREN) {
-    cpp_error_with_line(
-      pfile,
-      CPP_DL_ERROR,
-      token->src_loc,
-      0,
-      "expected '(' to open parameter list, but found: %s",
-      cpp_token_as_text(token)
-    );
-    return false;
-  }
-
-  unsigned int nparms = 0;
-  bool variadic = false;
-
-  if (!parse_params(pfile, &nparms, &variadic)) {
-    cpp_error_with_line(
-      pfile,
-      CPP_DL_ERROR,
-      token->src_loc,
-      0,
-      "malformed parameter list"
-    );
-    return false;
-  }
-
-  cpp_hashnode **params = (cpp_hashnode **)
-    _cpp_commit_buff(pfile, sizeof(cpp_hashnode *) * nparms);
-
-  *params_out = params;
-  *param_count_out = nparms;
-  *is_variadic_out = variadic;
-
-  return true;
-}
-
 bool _cpp_create_assign(cpp_reader *pfile){
 
-  /* Parse the parameter list
-  */
-    cpp_hashnode **params;
-    unsigned int param_count;
-    bool is_variadic;
-
-    if (!make_parameter_list(pfile, &params, &param_count, &is_variadic)) {
-      return false;
-    }
 
   /* Parse name clause into a temporary macro. 
 
@@ -4725,6 +4741,7 @@ bool _cpp_create_assign(cpp_reader *pfile){
       print_token_list(body_macro->exp.tokens ,body_macro->count);
     #endif
 
+
     cpp_macro *assign_macro = (cpp_macro *)_cpp_commit_buff(
       pfile
       ,sizeof(cpp_macro) - sizeof(cpp_token) + sizeof(cpp_token) * body_macro->count
@@ -4735,11 +4752,10 @@ bool _cpp_create_assign(cpp_reader *pfile){
       ,body_macro->exp.tokens
       ,sizeof(cpp_token) * body_macro->count
     );
-    assign_macro->variadic = is_variadic;
-    assign_macro->parm.params = params;
-    assign_macro->paramc = param_count;
-    assign_macro->fun_like = true;
-
+    body_macro->variadic = false;
+    body_macro->paramc = 0;
+    body_macro->parm.params = NULL;
+    body_macro->fun_like = false;
 
   /* Install the assign macro under name_node.
 
@@ -4752,12 +4768,13 @@ bool _cpp_create_assign(cpp_reader *pfile){
     name_node->flags &= ~NODE_USED;
 
     if (cpp_macro_p(name_node)) {
+      // There is no mechanism in libcpp to free the memory taken by a committed macro, but wec an cast it adrift.
       name_node->value.macro = NULL;
-      // There is no mechanism in libcpp to free the memory taken by a committed macro.
     }
     name_node->type = NT_USER_MACRO;
     name_node->value.macro = assign_macro;
     name_node->flags &= ~NODE_DISABLED;
+
 
   /* all done
   */
@@ -4774,6 +4791,267 @@ bool _cpp_create_assign(cpp_reader *pfile){
 
 }
 
+
+/*--------------------------------------------------------------------------------
+  Given a pfile, returns a macro definition.
+
+  #macro name (parameter [,parameter] ...) (body_expr)
+  #macro name () (body_expr)
+
+  Upon entry, the name was already been parsed in directives.cc::do_macro, so the next token will be the opening paren of the parameter list.
+
+  Thi code is similar to `_cpp_create_definition` though uses paren blancing around the body, instead of requiring the macro body be on a single line.
+
+  The cpp_macro struct is defined in cpplib.h:  `struct GTY(()) cpp_macro {` it has a flexible array field in a union as a last member: cpp_token tokens[1];
+
+  This code was derived from create_iso_definition(). The break out portions shared
+  with create_macro_definition code should be shared with the main code, so that there
+  is only one place for edits.
+
+*/
+static cpp_macro *create_iso_RT_macro (cpp_reader *pfile){
+
+  #if DebugRTMacro
+    fprintf(stderr,"entering create_iso_RT_macro\n");
+  #endif
+
+
+  const char *paste_op_error_msg =
+    N_("'##' cannot appear at either end of a macro expansion");
+  unsigned int num_extra_tokens = 0;
+  unsigned paramc = 0;
+  cpp_hashnode **params = NULL;
+  bool varadic = false;
+  bool ok = false;
+  cpp_macro *macro = NULL;
+  parse_clause_status status;
+
+  /*
+    After these six lines of code, the next token, hopefully being '(', will be in the variable 'token'.
+
+    _cpp_lex_direct() is going to clobber  pfile->cur_token with the token pointer, so
+    it is saved then restored.
+  */
+    cpp_token first;
+    cpp_token *saved_cur_token = pfile->cur_token;
+    pfile->cur_token = &first;
+    cpp_token *token = _cpp_lex_direct (pfile);
+    pfile->cur_token = saved_cur_token;
+
+  /* parse parameter list
+
+      after parse_parms runs, the next token returned by pfile will be subsequent to the parameter list, e.g.:
+         7 |   #macro Q(f ,...) printf(f ,__VA_ARGS__)
+           |                    ^~~~~~
+  */
+    if(token->type != CPP_OPEN_PAREN){
+      cpp_error_with_line(
+        pfile
+        ,CPP_DL_ERROR
+        ,token->src_loc
+        ,0
+        ,"expected '(' to open arguments list, but found: %s"
+        ,cpp_token_as_text(token)
+      );
+      goto out;
+    }
+
+    if( !parse_params(pfile, &paramc, &varadic) ) goto out;
+
+    // finalizes the reserved room, otherwise it will be reused on the next reserve room call.
+    params = (cpp_hashnode **)_cpp_commit_buff( pfile, sizeof (cpp_hashnode *) * paramc );
+    token = NULL;
+
+  /* parse macro body
+
+     A macro struct instance is variable size, due to tokens added to the macro.exp.tokens
+     during parse, and possible reallocations.
+
+     Function like macros will later need space to hold parameter values.
+  */
+    macro = _cpp_new_macro(
+      pfile
+      ,cmk_macro
+      ,_cpp_reserve_room( pfile, 0, sizeof(cpp_macro) ) 
+    );
+    // used by complete_parse_clause
+    macro->variadic = varadic;
+    macro->paramc = paramc;
+    macro->parm.params = params;
+    macro->fun_like = true;
+
+
+    token = _cpp_lex_direct (pfile);
+    if(token->type != CPP_OPEN_PAREN){
+      cpp_error_with_line(
+        pfile
+        ,CPP_DL_ERROR
+        ,token->src_loc
+        ,0
+        ,"expected '(' to open macro body, but found: %s"
+        ,cpp_token_as_text(token)
+      );
+      goto out;
+    }
+
+    status = parse_clause_body_literal(
+      pfile 
+      ,macro 
+      ,true // parenthesis delimiters
+      ,CPP_OPEN_PAREN
+      ,CPP_CLOSE_PAREN
+      ,paste_op_error_msg 
+      ,&num_extra_tokens 
+    );
+    
+    if( status != PCS_OK ){
+      fprintf(stderr, "create_iso_RT_macro parse clause failed: ");
+      print_parse_clause_status(status);  
+      goto out;
+    }
+
+    #if DebugRTMacro
+      fprintf(stderr,"rt_macro directive body tokens:\n");
+      print_token_list(macro->exp.tokens ,macro->count);
+    #endif
+
+    // commit the buffer, attach the parameter list
+    ok = true;
+    macro = (cpp_macro *)_cpp_commit_buff(
+      pfile
+      ,
+        sizeof (cpp_macro) 
+        - sizeof (cpp_token) 
+        + sizeof (cpp_token) * macro->count 
+        + sizeof(cpp_hashnode *) * paramc
+    );
+    macro->variadic = varadic;
+    macro->paramc = paramc;
+    macro->parm.params = params;
+    macro->fun_like = true;
+
+  // some end cases we must clean up
+  //
+    /*
+      It might be that the first token of the macro body was preceded by white space,so
+      the white space flag is set. However, upon expansion, there might not be a white
+      space before said token, so the following code clears the flag.
+    */
+    if (macro->count)
+      macro->exp.tokens[0].flags &= ~PREV_WHITE;
+
+    /*
+      Identifies consecutive ## tokens (a.k.a. CPP_PASTE) that were invalid or ambiguous,
+
+      Removes them from the main macro body,
+
+      Stashes them at the end of the tokens[] array in the same memory,
+
+      Sets macro->extra_tokens = 1 to signal their presence.
+    */
+    if (num_extra_tokens)
+      {
+        /* Place second and subsequent ## or %:%: tokens in sequences of
+           consecutive such tokens at the end of the list to preserve
+           information about where they appear, how they are spelt and
+           whether they are preceded by whitespace without otherwise
+           interfering with macro expansion.   Remember, this is
+           extremely rare, so efficiency is not a priority.  */
+        cpp_token *temp = (cpp_token *)_cpp_reserve_room
+          (pfile, 0, num_extra_tokens * sizeof (cpp_token));
+        unsigned extra_ix = 0, norm_ix = 0;
+        cpp_token *exp = macro->exp.tokens;
+        for (unsigned ix = 0; ix != macro->count; ix++)
+          if (exp[ix].type == CPP_PASTE)
+            temp[extra_ix++] = exp[ix];
+          else
+            exp[norm_ix++] = exp[ix];
+        memcpy (&exp[norm_ix], temp, num_extra_tokens * sizeof (cpp_token));
+
+        /* Record there are extra tokens.  */
+        macro->extra_tokens = 1;
+      }
+
+ out:
+
+  /*
+    - This resets a flag in the parser’s state machine, pfile.
+    - The field `va_args_ok` tracks whether the current macro body is allowed to reference `__VA_ARGS__` (or more precisely, `__VA_OPT__`).
+    - It's set **while parsing a macro body** that might use variadic logic — particularly in `vaopt_state` tracking.
+
+    Resetting it here ensures that future macros aren't accidentally parsed under the assumption that variadic substitution is valid.
+  */
+  pfile->state.va_args_ok = 0;
+
+  /*
+    Earlier we did:
+      if (!parse_params(pfile, &paramc, &variadic)) goto out;
+    This cleans up temporary memory used by parse_params.
+  */
+  _cpp_unsave_parameters (pfile, paramc);
+
+  return ok ? macro : NULL;
+}
+
+/*
+  called from directives.cc:: do_macro
+*/
+bool
+_cpp_create_macro(cpp_reader *pfile, cpp_hashnode *node){
+
+  #if DebugRTMacro
+    fprintf(stderr,"entering _cpp_create_macro\n");
+  #endif
+
+  cpp_macro *macro;
+  macro = create_iso_RT_macro (pfile);
+
+  if (!macro)
+    return false;
+
+  if (cpp_macro_p (node))
+    {
+      if (CPP_OPTION (pfile, warn_unused_macros))
+	_cpp_warn_if_unused_macro (pfile, node, NULL);
+
+      if (warn_of_redefinition (pfile, node, macro))
+	{
+          const enum cpp_warning_reason reason
+	    = (cpp_builtin_macro_p (node) && !(node->flags & NODE_WARN))
+	    ? CPP_W_BUILTIN_MACRO_REDEFINED : CPP_W_NONE;
+
+	  bool warned = 
+	    cpp_pedwarning_with_line (pfile, reason,
+				      pfile->directive_line, 0,
+				      "\"%s\" redefined", NODE_NAME (node));
+
+	  if (warned && cpp_user_macro_p (node))
+	    cpp_error_with_line (pfile, CPP_DL_NOTE,
+				 node->value.macro->line, 0,
+			 "this is the location of the previous definition");
+	}
+      _cpp_free_definition (node);
+    }
+
+  /* Enter definition in hash table.  */
+  node->type = NT_USER_MACRO;
+  node->value.macro = macro;
+  if (! ustrncmp (NODE_NAME (node), DSC ("__STDC_"))
+      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_FORMAT_MACROS")
+      /* __STDC_LIMIT_MACROS and __STDC_CONSTANT_MACROS are mentioned
+	 in the C standard, as something that one must use in C++.
+	 However DR#593 and C++11 indicate that they play no role in C++.
+	 We special-case them anyway.  */
+      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_LIMIT_MACROS")
+      && ustrcmp (NODE_NAME (node), (const uchar *) "__STDC_CONSTANT_MACROS"))
+    node->flags |= NODE_WARN;
+
+  /* If user defines one of the conditional macros, remove the
+     conditional flag */
+  node->flags &= ~NODE_CONDITIONAL;
+
+  return true;
+}
 
 
 

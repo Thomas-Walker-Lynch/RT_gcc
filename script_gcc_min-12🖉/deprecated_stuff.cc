@@ -1,3 +1,80 @@
+
+/*
+  Parse a macro-style parameter list for `#assign`
+
+  This expects the next token to be an opening parenthesis `(`.
+
+  It returns:
+    - `params_out`:  pointer to committed parameter array
+    - `param_count_out`: number of parameters parsed
+    - `is_variadic_out`: true if a variadic param was encountered
+
+  On success, returns true and fills the out parameters.
+  On failure, returns false and issues an error diagnostic.
+*/
+bool
+make_parameter_list(
+  cpp_reader *pfile,
+  cpp_hashnode ***params_out,
+  unsigned int *param_count_out,
+  bool *is_variadic_out
+){
+  cpp_token first;
+  cpp_token *saved_cur_token = pfile->cur_token;
+  pfile->cur_token = &first;
+  cpp_token *token = _cpp_lex_direct(pfile);
+  pfile->cur_token = saved_cur_token;
+
+  if (token->type != CPP_OPEN_PAREN) {
+    cpp_error_with_line(
+      pfile,
+      CPP_DL_ERROR,
+      token->src_loc,
+      0,
+      "expected '(' to open parameter list, but found: %s",
+      cpp_token_as_text(token)
+    );
+    return false;
+  }
+
+  unsigned int nparms = 0;
+  bool variadic = false;
+
+  if (!parse_params(pfile, &nparms, &variadic)) {
+    cpp_error_with_line(
+      pfile,
+      CPP_DL_ERROR,
+      token->src_loc,
+      0,
+      "malformed parameter list"
+    );
+    return false;
+  }
+
+  cpp_hashnode **params = (cpp_hashnode **)
+    _cpp_commit_buff(pfile, sizeof(cpp_hashnode *) * nparms);
+
+  *params_out = params;
+  *param_count_out = nparms;
+  *is_variadic_out = variadic;
+
+  return true;
+}
+
+  /* Parse the parameter list
+  */
+    cpp_hashnode **params;
+    unsigned int param_count;
+    bool is_variadic;
+
+    if (!make_parameter_list(pfile, &params, &param_count, &is_variadic)) {
+      return false;
+    }
+
+
+
+
+
 /*================================================================================
 from directive.cc
 

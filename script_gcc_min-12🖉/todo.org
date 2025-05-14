@@ -1,3 +1,6 @@
 
-- add the call back and warn logic for #assign in the macro.cc::name_clause_is_name function.
+- Add the call back and warn logic for #assign in the macro.cc::name_clause_is_name function.
 
+- The name is currently () or [], probably should allow a single name ID or [] instead.
+  or perhaps in general, allow for evaluated, not evaluated, or single identifier options.
+  

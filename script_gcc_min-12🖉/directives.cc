@@ -167,6 +167,7 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
   D(assert        ,T_ASSERT        ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(unassert      ,T_UNASSERT      ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(sccs          ,T_SCCS          ,EXTENSION   ,IN_I)         /* SVR4? */ \
+  D(macro         ,T_MACRO         ,EXTENSION   ,IN_I)                     \
   D(assign        ,T_ASSIGN        ,EXTENSION   ,IN_I)
 
 
@@ -2814,7 +2815,7 @@ cpp_token_as_text (const cpp_token *token)
   switch (token->type)
     {
     case CPP_NAME:
-      snprintf(buffer, sizeof(buffer), "identifier '%s'",
+      snprintf(buffer, sizeof(buffer), "CPP_NAME: '%s'",
                NODE_NAME(token->val.node.node));
       break;
 
@@ -2850,10 +2851,13 @@ cpp_token_as_text (const cpp_token *token)
     case CPP_MOD:
       return "'%'";
     case CPP_MACRO_ARG:
-      snprintf(buffer, sizeof(buffer), "macro_param '$%s'",
-         NODE_NAME(token->val.macro_arg.spelling));
+      snprintf(
+        buffer
+        ,sizeof(buffer)
+        ,"CPP_MACRO_ARG: '%s'"
+        ,NODE_NAME(token->val.macro_arg.spelling)
+      );
       break;
-
     case CPP_PADDING: return "<PADDING>";
     case CPP_COMMENT: return "<COMMENT>";
     case CPP_HASH: return "'#'";
@@ -2921,12 +2925,9 @@ void print_token_list(const cpp_token *tokens ,size_t count){
 
 
 /*--------------------------------------------------------------------------------
-  RT extention, directive `#assign`
+  directive `#assign`
 
-    cmd        ::= "#assign" params name body ;
-
-    params     ::= "(" param_list? ")" ;
-    param_list ::= identifier ("," identifier)* ;
+    cmd        ::= "#assign" name body ;
 
     name       ::= clause ;
     body       ::= clause ;
@@ -2942,11 +2943,6 @@ void print_token_list(const cpp_token *tokens ,size_t count){
        -name clause must reduce to a valid #define name
        -the assign is defined after the body clause has been parsed
 
-and for the call:
-
-    macro_call     ::= identifier "(" argument_list? ")" 
-
-
 */
 
 extern bool _cpp_create_assign(cpp_reader *pfile);
@@ -2958,4 +2954,50 @@ static void do_assign(cpp_reader *pfile){
 
 }
 
+
+/*--------------------------------------------------------------------------------
+  directive `#macro`
+
+    cmd        ::= "#macro" name params body ;
+
+    name       ::= identifier ;
+
+    params     ::= "(" param_list? ")" ;
+    param_list ::= identifier ("," identifier)* ;
+
+    body       ::= clause ;
+
+    clause     ::= "(" literal? ")" | "[" expr? "]" ;
+
+    literal    ::= ; sequence parsed into tokens
+    expr       ::= ; sequence parsed into tokens with recursive expansion of each token
+
+    ; white space, including new lines, is ignored.
+
+
+*/
+extern bool _cpp_create_macro (cpp_reader *pfile, cpp_hashnode *node);
+
+static void
+do_macro (cpp_reader *pfile)
+{
+  cpp_hashnode *node = lex_macro_node(pfile, true);
+
+  if(node)
+    {
+      /* If we have been requested to expand comments into macros,
+	 then re-enable saving of comments.  */
+      pfile->state.save_comments =
+	! CPP_OPTION (pfile, discard_comments_in_macro_exp);
+
+      if(pfile->cb.before_define)
+	pfile->cb.before_define (pfile);
+
+      if( _cpp_create_macro(pfile, node) )
+	if (pfile->cb.define)
+	  pfile->cb.define (pfile, pfile->directive_line, node);
+
+      node->flags &= ~NODE_USED;
+    }
+}
 
