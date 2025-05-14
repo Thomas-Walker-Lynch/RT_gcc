@@ -4140,9 +4140,9 @@ cpp_macro_definition (cpp_reader *pfile, cpp_hashnode *node,
 // RT extensions 
 //--------------------------------------------------------------------------------
 
-#define DebugParseClause 1
-#define DebugAssign 1
-#define DebugRTMacro 1
+#define DebugParseClause 0
+#define DebugAssign 0
+#define DebugRTMacro 0
 
 // see directives.cc
 extern const char *cpp_token_as_text(const cpp_token *token);
@@ -4577,7 +4577,7 @@ parse_clause(
     pfile->state.in_directive = saved_in_directive;
   }
 
-  return PCS_OK;
+  return status;
 }
 
 /*
