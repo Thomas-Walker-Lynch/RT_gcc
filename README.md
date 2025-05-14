@@ -46,6 +46,7 @@ Defines a macro in standard ISO form, using token literal parsing and optional p
 #### Syntax (EBNF):
 
 ```
+
 directive     ::= "#macro" name params body ;
 
 name          ::= identifier ;
@@ -53,15 +54,12 @@ name          ::= identifier ;
 params        ::= "(" param_list? ")" ;
 param_list    ::= identifier ("," identifier)* ;
 
-body          ::= clause ;
-
-clause        ::= "(" literal? ")" 
-                | "[" expr? "]" ;
+body          ::= "(" literal? ")" ;
 
 literal       ::= ; sequence parsed into tokens without expansion
-expr          ::= ; sequence parsed into tokens with recursive expansion
 
 ; whitespace, including newlines, is ignored
+
 ```
 
 - A `literal` clause is delimited with `(` ... `)` and behaves like `#define F(x) (x + 1)`.
