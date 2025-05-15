@@ -54,6 +54,10 @@ This is another variation on #define. Currently it can not be used to define fun
 
 Unlike assign, there is an option to expand the name and body before the definition is registered. When the name is expanded, it must expand to an identifier that can be used as a nmae.
 
+Should the body or name contain macros that are expanded, these expansions are done before the macro is put in the symbol table.  Hence, the name.
+
+If the assigned name arrives as an already defined, though disabled macro, `#assign` will clear the disabled flag. This does not enable recursion, but it does enable one more step of evaluation the next time the macro is evaluated. Note that macros are 'painted' during evaluation, so removing the flag only enables evaluation until the macro is painted again.
+
 #### Syntax (EBNF):
 
     cmd        ::= "#assign" name body ;
@@ -67,10 +71,6 @@ Unlike assign, there is an option to expand the name and body before the definit
     expr       ::= ; sequence parsed into tokens with recursive expansion of each token
 
     ; white space, including new lines, is ignored.
-
-     This differs from `#define`:
-       -name clause must reduce to a valid #define name
-       -the assign is defined after the body clause has been parsed
 
 ---
 
