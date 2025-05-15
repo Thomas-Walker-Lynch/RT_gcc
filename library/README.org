@@ -1,0 +1,26 @@
+
+* cpp_ext
+
+These cpp_ext files predate the RT extensions, but as they are related to cpp I have put them here.
+
+** cpp_ext_0
+
+The cpp_ext_0 implements logic and sets, and does not use recursion. It is a little different than other cpp logic files because it is based on absence being false, and existence being true. Hence '0' would be true, as it exists. It provides a BOOLEAN macro for converting to 0 and 1 logic.  
+
+cpp_ext_0 does not make use of tricky recursion techniques, nor does it make use of the RT cpp extensions.
+
+** cpp_ext_1
+
+This is a whole different animal from that of cpp_ext_0. This one uses trickery to facilitate recursive programming in cpp. 
+
+I pulled the original version from Jonathan Heathcote's "cpp magic", http://jhnet.co.uk/articles/cpp_magic, and modified it to work with the non-existence is false logic.  Open AI suggests additional contributors to cpp trickery:
+
+    Paul F. Dubois — wrote about C macro tricks in early numerical computing contexts.
+
+    Laurent Deniau — author of The C Preprocessor as a Turing-complete language.
+
+    Joachim Durchholz, Pavel Vozenilek, Walter Bright, and others — contributed deep macro insights in forums like comp.lang.c.
+
+    The Boost Preprocessor Library (by Paul Mensonides and others) contains some of the most extensive and formalized C macro "magic" ever crafted.
+
+I don't use cpp_ext_1 in production code because it can lead to very long error messages when compiling, and I have found non-recursive approaches for what I need. See the top level document/ directory for more discussion on cpp techniques (yet to come ;-).

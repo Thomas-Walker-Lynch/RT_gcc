@@ -1,18 +1,37 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "⚠️  You probably don't want to run this script. The files in \$ROOT/script_gcc_min-12🖉/library are intended to be the authoritative copies."
+# provides RT_CPP_FILES
+source "$(dirname "$0")/environment.sh"
+
+
+echo "⚠️  You probably don't want to run this script. The files in \$ROOT/script_Deb-12.10_gcc-12.4.1🖉/library are intended to be the authoritative copies."
 echo "So you did the bad thing and edited the files directly in the GCC source tree? Then this script is for you. ;-)"
 echo
 
-# Check ROOT is set
+echo -n "Continue❓ [y/N]: "
+read -r response
+if [[ "$response" == "y" || "$response" == "Y" ]]; then
+  :
+else
+  exit 1
+fi
+
+
 if [[ -z "${ROOT:-}" ]]; then
   echo "❌ ROOT environment variable is not set. Aborting."
   exit 1
 fi
+if [[ -z "${SCRIPT_DIR:-}" ]]; then
+  echo "❌ SCRIPT_DIR environment variable is not set. Aborting."
+  exit 1
+fi
+SRCDIR="library/"
+DESTDIR="$GCC_SRC/libcpp/"
+
 
 SRCDIR="$ROOT/source/gcc-12.2.0/libcpp"
-DESTDIR="$ROOT/script_gcc_min-12🖉/library"
+DESTDIR="$ROOT/script_Deb-12.10_gcc-12.4.1🖉/library"
 
 if [[ ! -d "$SRCDIR" ]]; then
   echo "❌ Source directory '$SRCDIR' does not exist."
@@ -24,13 +43,13 @@ if [[ ! -d "$DESTDIR" ]]; then
   exit 1
 fi
 
-FILES=(init.cc directives.cc macro.cc)
-
 echo "📋 Checking files in $SRCDIR to copy to $DESTDIR..."
 
-for file in "${FILES[@]}"; do
+for file in "${RT_CPP_FILES[@]}"; do
   SRC="$SRCDIR/$file"
   DEST="$DESTDIR/$file"
+
+  mkdir -p "$(dirname "$DEST")"
 
   if [[ ! -f "$SRC" ]]; then
     echo "⚠️  Source file '$SRC' not found. Skipping."

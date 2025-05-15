@@ -2,11 +2,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-SCRIPT_DIR="$PWD"
 
 source "$SCRIPT_DIR/environment.sh"
-
-cd "$SCRIPT_DIR"
 
 ./project_setup.sh 
 ./project_download.sh

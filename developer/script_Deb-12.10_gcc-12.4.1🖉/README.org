@@ -39,3 +39,15 @@ Don't forget `source env_toolsmith` in your shell.
 * Build
 
 See the script build_all.sh for a description of the complete build process.
+
+When editing the RT Extensions, the work flow is typically:
+
+while cwd in the script directory:
+1. edit the library/<file.cc>
+2. `./RT_extension_install.h`
+3. `./rebuild_gcc.sh`
+4. run some experiments
+
+It would of course be better to have a test suite.
+
+I typically leave an emacs shell open in the $ROOT/source/gcc-12.2.0/libcpp/ directory for purposes of exploring the other source code files.     

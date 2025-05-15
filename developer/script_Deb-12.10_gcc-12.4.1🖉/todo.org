@@ -4,3 +4,6 @@
 - The name is currently () or [], probably should allow a single name ID or [] instead.
   or perhaps in general, allow for evaluated, not evaluated, or single identifier options.
   
+- When this matures, should replace the capture/install with diff and patch.
+
+

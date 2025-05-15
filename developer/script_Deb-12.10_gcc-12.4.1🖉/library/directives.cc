@@ -167,6 +167,7 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
   D(assert        ,T_ASSERT        ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(unassert      ,T_UNASSERT      ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(sccs          ,T_SCCS          ,EXTENSION   ,IN_I)         /* SVR4? */ \
+  // RT exxtenssions:
   D(rt_macro      ,T_MACRO         ,EXTENSION   ,IN_I)                     \
   D(assign        ,T_ASSIGN        ,EXTENSION   ,IN_I)
 
@@ -2958,21 +2959,21 @@ static void do_assign(cpp_reader *pfile){
 /*--------------------------------------------------------------------------------
   directive `#macro`
 
-    cmd        ::= "#macro" name params body ;
+    directive     ::= "#rt_macro" name params body ;
 
-    name       ::= identifier ;
+    name          ::= identifier ;
 
-    params     ::= "(" param_list? ")" ;
-    param_list ::= identifier ("," identifier)* ;
+    params        ::= "(" param_list? ")" ;
+    param_list    ::= identifier ("," identifier)* ;
 
-    body       ::= clause ;
+    body          ::= paren_clause ;
 
-    clause     ::= "(" literal? ")" | "[" expr? "]" ;
+    paren_clause   ::= "(" literal? ")" 
 
-    literal    ::= ; sequence parsed into tokens
-    expr       ::= ; sequence parsed into tokens with recursive expansion of each token
+    literal       ::= ; sequence parsed into tokens without expansion
 
-    ; white space, including new lines, is ignored.
+
+    ; whitespace, including newlines, is ignored
 
 
 */

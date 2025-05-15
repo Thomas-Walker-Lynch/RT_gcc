@@ -114,6 +114,12 @@ cd $SCRIPT_DIR
   )
 
 #--------------------------------------------------------------------------------
+# RT extensions affected files
+
+  RT_CPP_FILES=(init.cc directives.cc macro.cc include/cpplib.h)
+
+
+#--------------------------------------------------------------------------------
 # build
 
   # Build directories

@@ -6,7 +6,5 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 export ROOT=$(dirname "$script_afp")
-export EXPERIMENT_DIR="$ROOT"/experiment🖉
 export PATH="$ROOT/toolchain/bin:$PATH"
 
-cd "$EXPERIMENT_DIR"

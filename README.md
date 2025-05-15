@@ -1,11 +1,10 @@
 # Standalone GCC installation with optional  RT cpp extensions
 
-
 ## State of the scripts 
 
 The default branch is 'core_developers_branch'.  (It is not 'master'.)
 
-The scripts in the script_Deb-12.10_gcc-12.4.1🖉/ directory are currently working to build gcc-12.4.1 on a Debian-12.10 system. They also work to build gcc-12.4.1 with the optional RT extensions to cpp.
+The scripts in the script_Deb-12.10_gcc-12.4.1🖉/ directory are currently building gcc-12.4.1 on a Debian-12.10 system. They also work to build gcc-12.4.1 with the optional RT extensions to cpp.
 
 If you are on another system, or using another version of gcc, if the script_Deb-12.10_gcc-12.4.1🖉/ scripts work for you, please note that here.
 
@@ -21,6 +20,10 @@ To see documentation on how to do the build, read the README in the appropriate 
 
 
 ## The RT extentions
+
+The RT extensions won't let you write recrusive macros. My apologies to my cpp magic friends. However, they will let you write sets, and to associate values with set members.  See the documents directory more information.
+
+Also for reference, I put the cpp magic like faux recursion in the top level library directory, but I suspect you won't need it.
 
 ### `#rt_macro`
 
@@ -116,3 +119,17 @@ __CAT(, foo, bar, baz)  // expands to: foobarbaz
 
 This project is licensed under the **MIT License**.  
 See the `LICENSE.text` file for full terms.
+
+## Project Structure / Building
+
+The top level directory is for project overhead files.  Development work is done in the 'developer' directory.  If someday there is a test bench it will go in the 'tester' directory.
+
+Begin the build process by editing the environment setting script, `env_developer` so that it goes to the correct build script directory, then source it.
+
+```
+> . env_developer
+```
+
+The build script directory will have a README.org, as well as bash scripts that can be read directly.
+
+

@@ -1,14 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
+# provides RT_CPP_FILES
+source "$(dirname "$0")/environment.sh"
+
 # Check ROOT is set
 if [[ -z "${ROOT:-}" ]]; then
   echo "❌ ROOT environment variable is not set. Aborting."
   exit 1
 fi
 
-SRCDIR="$ROOT/script_gcc_min-12🖉/library"
-DESTDIR="$ROOT/source/gcc-12.2.0/libcpp"
+SRCDIR="library/"
+DESTDIR="$GCC_SRC/libcpp/"
 
 if [[ ! -d "$SRCDIR" ]]; then
   echo "❌ Source directory '$SRCDIR' does not exist."
@@ -20,11 +23,9 @@ if [[ ! -d "$DESTDIR" ]]; then
   exit 1
 fi
 
-FILES=(init.cc directives.cc macro.cc)
-
 echo "📋 Installing files from $SRCDIR to $DESTDIR..."
 
-for file in "${FILES[@]}"; do
+for file in "${RT_CPP_FILES[@]}"; do
   SRC="$SRCDIR/$file"
   DEST="$DESTDIR/$file"
 
@@ -35,7 +36,7 @@ for file in "${FILES[@]}"; do
 
   if [[ ! -f "$DEST" || "$SRC" -nt "$DEST" ]]; then
     echo "📥 Installing (newer or missing): $file"
-    cp "$SRC" "$DEST"
+    cp -p "$SRC" "$DEST"
   elif [[ "$DEST" -nt "$SRC" ]]; then
     echo "⚠️  Destination file '$file' is newer than the source."
     echo "🔍 Showing diff:"
