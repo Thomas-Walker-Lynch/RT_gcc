@@ -1,14 +1,15 @@
 * General Notes
 
-GNU `cpp` is integrated with the gcc repo.
+GNU `cpp` is integrated with the GNU gcc repo.
 
 There is a lot more to GCC than one might imagine. It was developed as though an integral part of Unix. Hence, the standalone build has top-level directories that resemble the top level of a Unix system.
 
-The scripts here will download source and build a standalone GCC 12 along with version-compatible tools. It is common for a toolsmith to read the scripts and copy paste the commands.
+The scripts here will download source and build a standalone GCC 12 along with version-compatible tools.
+
 
 * RT extensions
 
-If you want the RT extensions, the install_RT_extensions.sh must be run after the gcc sources are expanded.
+If you want the RT extensions, the RT extension sources must be copied from library/ after the gcc sources are expanded. Use `RT_extensions_install.sh`. When editing the sources, generally the library/ versions are treated as authoritive.
 
 * environment
 

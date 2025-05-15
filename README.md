@@ -1,64 +1,34 @@
-# Standalone GCC Installation with Option for RT Mods
+# Standalone GCC installation with optional  RT cpp extensions
 
-As of 2025-05-15:
 
-This is pre-release development.
+## State of the scripts 
 
-* Based on GCC 12.4.1
-* Builds on Debian 12
-* Standalone toolchain build scripts are functional and modular
-* Includes `#macro` and `#assign` directive support (RT extensions)
+The default branch is 'core_developers_branch'.  (It is not 'master'.)
 
----
+The scripts in the script_Deb-12.10_gcc-12.4.1🖉/ directory are currently working to build gcc-12.4.1 on a Debian-12.10 system. They also work to build gcc-12.4.1 with the optional RT extensions to cpp.
 
-## General Notes
+If you are on another system, or using another version of gcc, if the script_Deb-12.10_gcc-12.4.1🖉/ scripts work for you, please note that here.
 
-The scripts in the script_gcc_min-12🖉/ directory are working on Debian 12.10, though 'build_all.sh' has not been run yet. It currently functions as documentation as to how to do the install.  Though you might run it if you are brave, mightbe that it will work.
+If you had to modify the scripts to make the install work, please make a new directory with your system and gcc version, and copy and modify the scripts there.
 
-The scripts in the script_gcc-15🖉/ directory do not work. It was difficult to bootstrap a standalone install of the latest gcc. Hence the fall back to the 
+The scripts in the script_gcc-15🖉/ directory do not work. It was difficult to bootstrap a standalone install of the latest gcc, on Deb-12, but I gave it a try. Hence the fall back to the version 12.
 
-The gcc 12 scripts are working.
+## Documentation
 
-With the esception of this file, all documents are in emacs org format.
+Apart from this file, the text documents are written in emacs org format.
 
-## Standalone Build
+To see documentation on how to do the build, read the README in the appropriate script directory. Also note that the scripts themselves list the commands and options used, in the order they are used.
 
-For those who wish to let the chips fall where they may:
 
-```bash
-> source env_toolsmith
-> ./build_all.sh
-```
-
-Alternatively, read through `build_all.sh` and follow its logic step by step.  
-Environment variables are defined in `script🖉/environment.sh` — this file guides where and how components are installed.
-
----
-
-## The `#rt_macro` and `#assign` Directives
-
-These are two experimental extensions to the C preprocessor (CPP), part of the **RT Extensions**.
-
-To enable them:
-
-```bash
-> source env_toolsmith
-> ./apply_RT_assign_directive_mod
-> ./build_all.sh
-```
-
-(At the moment manually copy the directives.cc and macro.cc files back into the source.)
-
----
+## The RT extentions
 
 ### `#rt_macro`
 
-Defines a macro in standard ISO form, using token literal parsing and optional parameter substitution. Equivalent to a cleaner `#define`, with controlled multi-line support and macro parameter semantics.
+Defines a macro in standard ISO form, using token literal parsing and optional parameter substitution. Basically it is `#define` where the body is contained within parenthesis, and need not be on one line.
 
 #### Syntax (EBNF):
 
 ```
-
 directive     ::= "#rt_macro" name params body ;
 
 name          ::= identifier ;
@@ -71,29 +41,15 @@ body          ::= "(" literal? ")" ;
 literal       ::= ; sequence parsed into tokens without expansion
 
 ; whitespace, including newlines, is ignored
-
 ```
 
-- A `literal` clause is delimited with `(` ... `)` and behaves like `#define F(x) (x + 1)`.
-- An `expr` clause is delimited with `[` ... `]` and expands tokens as they are parsed.
-
-If you need an unbalanced parenthesis in the macro, define it to a macro, then include the macro.
-
-#define OPEN (
-#assign X() ( OPEN )
-
----
+If you need an unbalanced paren, define a macro that expands to a paren and use that. Parenthesis need only to match when the body is lexed.
 
 ### `#assign`
 
-Assigns a macro dynamically. It differs from `#macro` by:
-- Accepting a **macro name expression** (`name_clause`) which may itself be an expansion
-- Accepting a **macro body expression**, optionally with recursive expansion
-- Allowing runtime reassignment of macro behavior
+This is another variation on #define. Currently it can not be used to define function like macros. 
 
-_This enables construction of self-modifying or symbolic macros within a source file._
-
-**Note:** `#assign` currently supports expression-based bodies but does not include parameter binding.
+Unlike assign, there is an option to expand the name and body before the definition is registered. When the name is expanded, it must expand to an identifier that can be used as a nmae.
 
 #### Syntax (EBNF):
 
@@ -114,6 +70,47 @@ _This enables construction of self-modifying or symbolic macros within a source 
        -the assign is defined after the body clause has been parsed
 
 ---
+
+#### Examples
+
+See the experiments/ directory for more examples.
+
+```
+#assign (A_NAME) (3)
+```
+
+Is the same as:
+
+```
+#define A_NAME 3
+```
+
+```
+#define B_NAME Fred
+#assign [B_NAME] (5)
+```
+
+Is the same as:
+
+```
+#define Fred 5
+```
+
+### `__CAT(SEP, ...)`
+
+A builtin macro utility for token concatenation with an explicit separator.
+
+Unlike the standard `##` token pasting, `__CAT` allows insertion of a custom separator, and works with variadic arguments. 
+
+**Example:**
+
+```
+__CAT(_, foo, bar, baz)  // expands to: foo_bar_baz
+```
+```
+__CAT(, foo, bar, baz)  // expands to: foobarbaz
+```
+
 
 ### License
 
