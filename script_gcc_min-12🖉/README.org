@@ -1,34 +1,40 @@
+* General Notes
 
-This was a bear to get running, and I have given up on it for now.
+GNU `cpp` is integrated with the gcc repo.
 
-It dies early in the chain at the making of glibc and the crt.o
-etc. files.
+There is a lot more to GCC than one might imagine. It was developed as though an integral part of Unix. Hence, the standalone build has top-level directories that resemble the top level of a Unix system.
 
-# Scripts for building standalone gcc
+The scripts here will download source and build a standalone GCC 12 along with version-compatible tools. It is common for a toolsmith to read the scripts and copy paste the commands.
 
-The scripts here will build a standalone gcc along with version compatible tools.
+* RT extensions
 
-There is a lot more to a gcc than one might imagine. It was developed as though an integral part of Unix.  Hence, the standalone build has top level directories with many things in them, in parallel to the top level directories a person would find on a Unix system.
+If you want the RT extensions, the install_RT_extensions.sh must be run after the gcc sources are expanded.
 
-## .gitignore
+* environment
 
-* If there is no top level `.gitignore`, `setup_project.sh` will create one.
-* The synthesized `.gitignore` references itself, so it will not get checked in.
-* No script, including`clean_dist.sh`, will  delete an existing `.gitignore`.
+Don't forget `source env_toolsmith` in your shell.
 
-## Clean
+* Setup
 
-* clean_build.sh - for saving space after the build is done. The build scripts are idempotent, so in an ideal world this need not be run to do a rebuild.
+- `setup_project.sh` :: Makes the directory structure for the build, creates a `tmp/` directory under the project. If it does not already exist, creates a `.gitignore` file with all the created directories listed.
 
-* clean_dist.sh - with on exception, this will delete everything that was synthesized.  The one exception is that .gitignore is moved to the tmp directory so as to preserve any changes a user might have been made, and the contents of the tmp directory are not removed.
+* Top level .gitignore
 
-* clean_tmp.sh - wipes clean all contents of the temporary directory.
+- There is no `.gitignore` at the top level when the project is cloned. The `.gitignore` created by `setup_project.sh` ignores itself, so it will not be checked in.
+- No script deletes the top level `.gitignore`, including the clean scripts, so the toolsmith can make edits there that persist locally.
 
-## Setup
+* Clean
 
-* setup_project.sh - makes the directory structure for the build, creates a `tmp/` directory under the project. If it does not already exist, creates a .gitignore file with all the created directories listed.
+- `clean_build.sh` :: For saving space after the build is done. The build scripts are idempotent, so in an ideal world this need not be run to do a rebuild.
 
-## Download
+- `clean_dist.sh` :: With one exception, this will delete everything that was synthesized. The one exception is that `.gitignore` is moved to the `tmp/` directory to preserve any changes a user might have made, and the contents of the `tmp/` directory are not removed.
 
-* download_upstream_sources.sh - goes to the Internet, fetches all the sources that have not already been fetched. Then expands the sources into the proper sub-directory under `source/1.
+- `clean_tmp.sh` :: Wipes clean all contents of the temporary directory.
 
+* Download
+
+- `download_upstream_sources.sh` :: Goes to the Internet, fetches all the sources that have not already been fetched. Then expands the sources into the proper sub-directory under `source/1`.
+
+* Build
+
+See the script build_all.sh for a description of the complete build process.

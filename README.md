@@ -1,6 +1,8 @@
 # Standalone GCC Installation with Option for RT Mods
 
-As of 2025-05-14:
+As of 2025-05-15:
+
+This is pre-release development.
 
 * Based on GCC 12.4.1
 * Builds on Debian 12
@@ -8,6 +10,16 @@ As of 2025-05-14:
 * Includes `#macro` and `#assign` directive support (RT extensions)
 
 ---
+
+## General Notes
+
+The scripts in the script_gcc_min-12🖉/ directory are working on Debian 12.10, though 'build_all.sh' has not been run yet. It currently functions as documentation as to how to do the install.  Though you might run it if you are brave, mightbe that it will work.
+
+The scripts in the script_gcc-15🖉/ directory do not work. It was difficult to bootstrap a standalone install of the latest gcc. Hence the fall back to the 
+
+The gcc 12 scripts are working.
+
+With the esception of this file, all documents are in emacs org format.
 
 ## Standalone Build
 
