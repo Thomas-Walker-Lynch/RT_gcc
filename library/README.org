@@ -1,11 +1,7 @@
 
 * cpp_ext
 
-These cpp_ext files are not used in the code for RT_gcc. Nor do they use RT extensions. Rather developing them was part of the due diligence before electing to write the RT extensions.
-
-I find cpp_ext_0 to be useful, and would not hesitate to use it in production code.  
-
-In contrast,  was a good pedagogical tool for learning cpp, but I would hesitate to use it in production code.  The reasoning being that recursion can lead to compiler error messages that span pages.
+The cpp_ext.c files will work with gcc without the RT extensions.  With the RT extensions they are deprecated.
 
 ** cpp_ext_0
 
@@ -14,6 +10,12 @@ The cpp_ext_0 implements logic and sets, and does not use recursion. It is a lit
 cpp_ext_0 does not make use of tricky recursion techniques, nor does it make use of the RT cpp extensions.
 
 ** cpp_ext_1
+
+This is an example of what not to do with production code.  This is not part of the RT extensions.  
+
+However, cpp_ext_1 is wonderful way to learn more about cpp.  It tricks cpp into doing limited depth recursion despite its macro painting feature.
+
+It did make it into some of my C code for implementing variadic CAT before it was available without recursion with the RT extensions.
 
 I pulled the original version from Jonathan Heathcote's "cpp magic", http://jhnet.co.uk/articles/cpp_magic, and modified it to work with the non-existence is false logic.  Open AI suggests additional contributors to cpp trickery:
 
@@ -25,12 +27,14 @@ I pulled the original version from Jonathan Heathcote's "cpp magic", http://jhne
 
     The Boost Preprocessor Library (by Paul Mensonides and others) contains some of the most extensive and formalized C macro "magic" ever crafted.
 
-I don't use cpp_ext_1 in production code because it can lead to very long error messages when compiling, and I have found non-recursive approaches for what I need. See the top level document/ directory for more discussion on cpp techniques (yet to come ;-).
+Using cpp_ext_1 can result in very long error messages when compiling. Get some popcorn, and have fun watching them scroll by.
 
 * cpp_ext_rt
 
-In cpp_ext_0 it was not possible to write a routine that adds a member to a set, because we cannot create macro names on the fly.  The `#assign` directive in the rt extension solves this problem.
+In cpp_ext_0 it was not possible to write a routine that adds a member to a set, because cpp had no facilitate for auto-generating  macro names.  The `#assign` directive in the rt extension solves this problem.
 
-Cat is an often used macro for prefixing a namespace, prefixing a set name to the front of an identifier before a membership test, or creating identifiers for equality matching.  Seldom do we need very many levels of concatenation, though the exact number is not always bounded.  Currently I use cpp_ext_1 recursion for variadic concatenation so that CAT won't have a number, CAT2, CAT3, etc.  Variadic CAT seems like a reasonable thing to be able to do perhaps by putting ## in front of __VA_ARGS__.  Hence, I added the built in macro __CAT(SEP, ...).
+CAT is an often used macro for prefixing a namespace, prefixing a set name to the front of an identifier before a membership test, or creating identifiers for equality matching.  Seldom do we need very many arguments for these use case, though the exact number is not always bounded.
+
+Variadic CAT seems like a reasonable thing to be able to do. One might imagine putting ## in front of __VA_ARGS__; though it would be nice to also have an optional separator. Hence, I added the built in macro RT_CAT(SEP, ...).
 
 

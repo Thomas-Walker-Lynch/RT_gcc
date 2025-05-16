@@ -1,9 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Provides RT_CPP_FILES
+# Provides RT_CPP_FILES and paths
 source "$(dirname "$0")/environment.sh"
 
+# Check required env vars
 if [[ -z "${ROOT:-}" ]]; then
   echo "❌ ROOT environment variable is not set. Aborting."
   exit 1
@@ -26,9 +27,17 @@ if [[ ! -d "$DESTDIR" ]]; then
   exit 1
 fi
 
+# Choose files to diff
+FILES=()
+if [[ "$#" -gt 0 ]]; then
+  FILES=("$@")
+else
+  FILES=("${RT_CPP_FILES[@]}")
+fi
+
 echo "🔍 Diffing library ↔ libcpp..."
 
-for file in "${RT_CPP_FILES[@]}"; do
+for file in "${FILES[@]}"; do
   SRC="$SRCDIR/$file"
   DEST="$DESTDIR/$file"
 
