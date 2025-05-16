@@ -1,21 +1,46 @@
 # === environment.sh ===
 # Source this file in each build script to ensure consistent paths and settings
 
-echo "ROOT: $ROOT"
-cd $SCRIPT_DIR
+#!/bin/sh
+
+: "${REPO_HOME:?REPO_HOME is not set}"
+: "${DEVELOPER:?DEVELOPER is not set}"
+: "${SCRIPT_DIR:?SCRIPT_DIR is not set}"
+
+[ -d "$REPO_HOME" ]   || { echo "Directory not found: REPO_HOME ($REPO_HOME)" >&2; exit 1; }
+[ -d "$DEVELOPER" ]   || { echo "Directory not found: DEVELOPER ($DEVELOPER)" >&2; exit 1; }
+[ -d "$SCRIPT_DIR" ]  || { echo "Directory not found: SCRIPT_DIR ($SCRIPT_DIR)" >&2; exit 1; }
+
+echo "REPO_HOME:  $REPO_HOME"
+echo "DEVELOPER:  $DEVELOPER"
+echo "SCRIPT_DIR: $SCRIPT_DIR"
 
 #--------------------------------------------------------------------------------
-# tools
+# project structure
 
-  # machine target
-  export HOST=$(gcc -dumpmachine)
+  # temporary directory
+  export TMPDIR="$REPO_HOME/tmp"
 
-  export MAKE_JOBS=$(getconf _NPROCESSORS_ONLN)
-  export MAKE=make
+  # Project directories
+  export SYSROOT="$DEVELOPER/sysroot"
+  export TOOLCHAIN="$DEVELOPER/toolchain"
+  export BUILD_DIR="$DEVELOPER/build"
+  export LOGDIR="$DEVELOPER/log"
+  export UPSTREAM="$DEVELOPER/upstream"
+  export SRC=$DEVELOPER/source
 
-  # Compiler path prefixes
-  export CC_FOR_BUILD=$(command -v gcc)
-  export CXX_FOR_BUILD=$(command -v g++)
+  # lists of project directories to synthesize
+  PROJECT_DIR_LIST=(
+    "$LOGDIR"
+    "$SYSROOT" "$TOOLCHAIN" "$BUILD_DIR"
+    "$UPSTREAM" "$SRC"
+  )
+  # list these in the order for which they can be deleted
+  PROJECT_SUBDIR_LIST=(
+    "$SYSROOT/usr/lib"
+    "$SYSROOT/lib"
+    "$SYSROOT/usr/include"
+  )
 
 #--------------------------------------------------------------------------------
 # Tool and library versions (optimized build with Graphite and LTO compression)
@@ -28,31 +53,33 @@ cd $SCRIPT_DIR
   export ZSTD_VER=1.5.5       # zstd compression for LTO bytecode
 
 #--------------------------------------------------------------------------------
-# project structure
+# tools
 
-  # temporary directory
-  export TMPDIR="$ROOT/tmp"
+  # Compiler path prefixes
+  export CC_FOR_BUILD="$(command -v gcc)"
+  export CXX_FOR_BUILD="$(command -v g++)"
+  export MAKE="$(command -v make)"
 
-  # Project directories
-  export SYSROOT="$ROOT/sysroot"
-  export TOOLCHAIN="$ROOT/toolchain"
-  export BUILD_DIR="$ROOT/build"
-  export LOGDIR="$ROOT/log"
-  export UPSTREAM="$ROOT/upstream"
-  export SRC=$ROOT/source
+  # Verify that compilers were found
+  : "${CC_FOR_BUILD:?gcc not found in PATH}"
+  : "${CXX_FOR_BUILD:?g++ not found in PATH}"
+  : "${MAKE:?make not found in PATH}"
 
-  # Synthesized directory lists
-  PROJECT_DIR_LIST=(
-    "$LOGDIR"
-    "$SYSROOT" "$TOOLCHAIN" "$BUILD_DIR"
-    "$UPSTREAM" "$SRC"
-  )
-  # list these in the order they can be deleted
-  PROJECT_SUBDIR_LIST=(
-    "$SYSROOT/usr/lib"
-    "$SYSROOT/lib"
-    "$SYSROOT/usr/include"
-  )
+  [ -x "$CC_FOR_BUILD" ]  || { echo "❌ $CC_FOR_BUILD is not executable"; exit 1; }
+  [ -x "$CXX_FOR_BUILD" ] || { echo "❌ $CXX_FOR_BUILD is not executable"; exit 1; }
+  [ -x "$MAKE" ]          || { echo "❌ $MAKE is not executable"; exit 1; }
+
+  # Machine target
+  export HOST="$("$CC_FOR_BUILD" -dumpmachine)"
+
+  # Determine parallelism
+  if command -v getconf >/dev/null 2>&1; then
+    export MAKE_JOBS=$(getconf _NPROCESSORS_ONLN)
+  else
+    echo "⚠️  getconf not found; defaulting MAKE_JOBS=1"
+    export MAKE_JOBS=1
+  fi
+
 
 #--------------------------------------------------------------------------------
 # upstream -> local stuff

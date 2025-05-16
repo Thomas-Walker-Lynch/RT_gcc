@@ -1,0 +1,26 @@
+** directives.cc
+
+Midway there is a table that lists the directives.
+
+I put the code for `#assign` and `#macro` at the bottom under the section: "RT Extensions".
+
+
+** macros.cc
+
+The code in the directives file points into macros to do the work. I put that code for `#assign` and `#macro` at the bottom under the section: "RT Extensions".
+
+
+** include/cpplib.h
+
+Added entry to `enum cpp_builtin_type` for `BT_CAT`
+
+
+** init.cc
+
+Has, `static const struct builtin_macro builtin_array[] =`, I added a line for
+
+  B("__CAT",		 BT_CAT,          true),
+
+Strange the original for this file has a comma after the last entry, so I did the same.
+
+The `true` means that there will be a warning if __CAT is redefined.

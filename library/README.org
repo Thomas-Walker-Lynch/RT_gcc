@@ -1,7 +1,11 @@
 
 * cpp_ext
 
-These cpp_ext files predate the RT extensions, but as they are related to cpp I have put them here.
+These cpp_ext files are not used in the code for RT_gcc. Nor do they use RT extensions. Rather developing them was part of the due diligence before electing to write the RT extensions.
+
+I find cpp_ext_0 to be useful, and would not hesitate to use it in production code.  
+
+In contrast,  was a good pedagogical tool for learning cpp, but I would hesitate to use it in production code.  The reasoning being that recursion can lead to compiler error messages that span pages.
 
 ** cpp_ext_0
 
@@ -10,8 +14,6 @@ The cpp_ext_0 implements logic and sets, and does not use recursion. It is a lit
 cpp_ext_0 does not make use of tricky recursion techniques, nor does it make use of the RT cpp extensions.
 
 ** cpp_ext_1
-
-This is a whole different animal from that of cpp_ext_0. This one uses trickery to facilitate recursive programming in cpp. 
 
 I pulled the original version from Jonathan Heathcote's "cpp magic", http://jhnet.co.uk/articles/cpp_magic, and modified it to work with the non-existence is false logic.  Open AI suggests additional contributors to cpp trickery:
 
@@ -24,3 +26,11 @@ I pulled the original version from Jonathan Heathcote's "cpp magic", http://jhne
     The Boost Preprocessor Library (by Paul Mensonides and others) contains some of the most extensive and formalized C macro "magic" ever crafted.
 
 I don't use cpp_ext_1 in production code because it can lead to very long error messages when compiling, and I have found non-recursive approaches for what I need. See the top level document/ directory for more discussion on cpp techniques (yet to come ;-).
+
+* cpp_ext_rt
+
+In cpp_ext_0 it was not possible to write a routine that adds a member to a set, because we cannot create macro names on the fly.  The `#assign` directive in the rt extension solves this problem.
+
+Cat is an often used macro for prefixing a namespace, prefixing a set name to the front of an identifier before a membership test, or creating identifiers for equality matching.  Seldom do we need very many levels of concatenation, though the exact number is not always bounded.  Currently I use cpp_ext_1 recursion for variadic concatenation so that CAT won't have a number, CAT2, CAT3, etc.  Variadic CAT seems like a reasonable thing to be able to do perhaps by putting ## in front of __VA_ARGS__.  Hence, I added the built in macro __CAT(SEP, ...).
+
+

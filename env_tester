@@ -6,5 +6,5 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 export ROOT=$(dirname "$script_afp")
-export PATH="$ROOT/toolchain/bin:$PATH"
+export PATH="$ROOT/release/amd64_Deb-12.10_gcc-12.4.1/bin:$PATH"
 

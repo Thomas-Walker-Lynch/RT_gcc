@@ -20,26 +20,28 @@ if [[ ! -d "$TMPDIR" ]]; then
   echo "mkdir -p $TMPDIR"
   mkdir -p "$TMPDIR"
 
-  echo "echo $TMPDIR/ > $TMPDIR/.gitignore"
   echo "$TMPDIR/" > "$TMPDIR/.gitignore"
 else
   echo "⚠️ TMPDIR already exists"
 fi
 
 # Create root-level .gitignore if missing
-if [[ -f "$ROOT/.gitignore" ]]; then
-  echo "⚠️ $ROOT/.gitignore already exists"
+if [[ -f "$REPO_HOME/.gitignore" ]]; then
+  echo "⚠️ $REPO_HOME/.gitignore already exists"
 else
-  echo "create $ROOT/.gitignore"
+  echo "create $REPO_HOME/.gitignore"
   {
     echo "# Ignore synthesized top-level directories"
     for dir in "${PROJECT_DIR_LIST[@]}"; do
-      rel_path="${dir#$ROOT/}"
+      rel_path="${dir#$REPO_HOME/}"
       echo "/$rel_path"
     done
     echo "# Ignore synthesized files"
     echo "/.gitignore"
-  } > "$ROOT/.gitignore"
+  } > "$REPO_HOME/.gitignore"
 fi
 
-echo "✅ setup_project.sh"
+echo
+echo "Created project structure:"
+tree -L 2 "$REPO_HOME" 2>/dev/null || find "$REPO_HOME" -maxdepth 2
+

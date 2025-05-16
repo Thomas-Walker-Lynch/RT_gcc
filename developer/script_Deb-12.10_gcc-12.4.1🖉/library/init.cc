@@ -426,7 +426,7 @@ static const struct builtin_macro builtin_array[] =
   B("__STDC__",		 BT_STDC,          true),
 
   // RT Extension
-  B("__CALL",		 BT_CALL,          true),
+  B("__CAT",		 BT_CAT,          true),
 
 };
 #undef B
