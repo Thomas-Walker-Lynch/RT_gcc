@@ -928,7 +928,7 @@ enum cpp_builtin_type
   BT_HAS_INCLUDE_NEXT,		/* `__has_include_next(x)' */
 
   // RT Extension
-  BT_CAT                        /* `__CAT(SEP ,...)' */
+  BT_RT_CAT                     /* `RT_CAT(SEP ,...)' */
 };
 
 #define CPP_HASHNODE(HNODE)	((cpp_hashnode *) (HNODE))

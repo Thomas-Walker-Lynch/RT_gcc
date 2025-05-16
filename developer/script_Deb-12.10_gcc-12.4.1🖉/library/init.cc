@@ -402,6 +402,8 @@ struct builtin_macro
 #define B(n, t, f)    { DSC(n), t, f }
 static const struct builtin_macro builtin_array[] =
 {
+  B("RT_CAT",		 BT_RT_CAT,        true),  /* RT Extension */
+
   B("__TIMESTAMP__",	 BT_TIMESTAMP,     false),
   B("__TIME__",		 BT_TIME,          false),
   B("__DATE__",		 BT_DATE,          false),
@@ -420,14 +422,14 @@ static const struct builtin_macro builtin_array[] =
   B("__has_builtin",	 BT_HAS_BUILTIN,   true),
   B("__has_include",	 BT_HAS_INCLUDE,   true),
   B("__has_include_next",BT_HAS_INCLUDE_NEXT,   true),
-  /* Keep builtins not used for -traditional-cpp at the end, and
-     update init_builtins() if any more are added.  */
-  B("_Pragma",		 BT_PRAGMA,        true),
-  B("__STDC__",		 BT_STDC,          true),
-
-  // RT Extension
-  B("__CAT",		 BT_CAT,          true),
-
+  /* The following macros are excluded when -traditional-cpp is used.
+     Therefore, they must appear at the end of this array so that they can be
+     easily removed by slicing in cpp_init_special_builtins().
+     (If you add new built-ins that should be excluded in traditional mode,
+     place them *before* __STDC__ and update cpp_init_special_builtins() accordingly.)
+  */
+  B("_Pragma",		 BT_PRAGMA,        true), 
+  B("__STDC__",		 BT_STDC,          true)
 };
 #undef B
 

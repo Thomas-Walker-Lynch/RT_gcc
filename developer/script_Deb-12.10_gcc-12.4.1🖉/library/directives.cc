@@ -167,7 +167,6 @@ static void cpp_pop_definition (cpp_reader *, struct def_pragma_macro *);
   D(assert        ,T_ASSERT        ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(unassert      ,T_UNASSERT      ,EXTENSION   ,DEPRECATED)    /* SVR4 */ \
   D(sccs          ,T_SCCS          ,EXTENSION   ,IN_I)         /* SVR4? */ \
-  // RT exxtenssions:
   D(rt_macro      ,T_MACRO         ,EXTENSION   ,IN_I)                     \
   D(assign        ,T_ASSIGN        ,EXTENSION   ,IN_I)
 

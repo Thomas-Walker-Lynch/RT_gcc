@@ -19,6 +19,10 @@ source "$(dirname "$0")/environment.sh"
   ! ! rmdir "$SRC" >& /dev/null && echo "rmdir $SRC"
   ! ! rmdir "$UPSTREAM" >& /dev/null && echo "rmdir $UPSTREAM"
 
+# Remove binaries from toolchain (if they were copied to release, those copies remain).
+#
+  "./clean_toolchain.sh"
+
 # Remove project directories
 #
   for dir in "${PROJECT_SUBDIR_LIST[@]}" "${PROJECT_DIR_LIST[@]}"; do

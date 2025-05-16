@@ -15,3 +15,12 @@ source "$SCRIPT_DIR/environment.sh"
 
 echo "Toolchain build complete"
 "$TOOLCHAIN/bin/gcc" --version
+
+# test
+
+./RT_extentions_libcpp_save.sh
+./RT_extentions_install.sh
+./rebuild_gcc.sh
+
+echo "Toolchain built with RT_extensions installed"
+"$TOOLCHAIN/bin/gcc" --version

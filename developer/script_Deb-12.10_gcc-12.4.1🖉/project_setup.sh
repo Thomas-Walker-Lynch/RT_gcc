@@ -43,5 +43,5 @@ fi
 
 echo
 echo "Created project structure:"
-tree -L 2 "$REPO_HOME" 2>/dev/null || find "$REPO_HOME" -maxdepth 2
+# tree -L 2 "$REPO_HOME" 2>/dev/null || find "$REPO_HOME" -maxdepth 2
 

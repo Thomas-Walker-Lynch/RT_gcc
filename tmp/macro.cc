@@ -680,17 +680,6 @@ _cpp_builtin_macro_text (cpp_reader *pfile, cpp_hashnode *node,
       number = builtin_has_include (pfile, node,
 				    node->value.builtin == BT_HAS_INCLUDE_NEXT);
       break;
-
-    case BT_RT_CAT:
-
-      const char *str = "calico";
-      size_t len = strlen(str) + 1;
-      uchar *result = (uchar *) _cpp_unaligned_alloc(pfile, len);
-      memcpy(result, str, len);
-
-
-      break;
-     
     }
 
   if (result == NULL)
