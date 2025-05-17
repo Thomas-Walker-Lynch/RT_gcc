@@ -97,19 +97,19 @@ Is the same as:
 #define Fred 5
 ```
 
-### `__CAT(SEP, ...)`
+### `RT_CAT(SEP, ...)`
 
 A builtin macro utility for token concatenation with an explicit separator.
 
-Unlike the standard `##` token pasting, `__CAT` allows insertion of a custom separator, and works with variadic arguments. 
+Unlike the standard `##` token pasting, `RT_CAT` allows insertion of a custom separator, and works with variadic arguments. 
 
 **Example:**
 
 ```
-__CAT(_, foo, bar, baz)  // expands to: foo_bar_baz
+RT_CAT(_, foo, bar, baz)  // expands to: foo_bar_baz
 ```
 ```
-__CAT(, foo, bar, baz)  // expands to: foobarbaz
+RT_CAT(, foo, bar, baz)  // expands to: foobarbaz
 ```
 
 ## Project Structure / Building

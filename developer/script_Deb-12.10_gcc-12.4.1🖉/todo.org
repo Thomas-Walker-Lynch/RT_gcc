@@ -1,3 +1,4 @@
+2025-05-00
 
 - Add the call back and warn logic for #assign in the macro.cc::name_clause_is_name function.
 
@@ -6,4 +7,6 @@
   
 - When this matures, should replace the capture/install with diff and patch.
 
+
+2025-05-17 in maco.cc,  seems the end cases in `parse_clause_literal()` should be included in  `parse_clause_expand()`.
 
