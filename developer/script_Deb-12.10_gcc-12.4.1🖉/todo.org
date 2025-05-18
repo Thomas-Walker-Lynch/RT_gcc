@@ -10,3 +10,5 @@
 
 2025-05-17 in maco.cc,  seems the end cases in `parse_clause_literal()` should be included in  `parse_clause_expand()`.
 
+2025-05-18 It would have been better perhaps to send in a pointer to a token allocation,
+  instead of to a src_loc, and and terminal type.
