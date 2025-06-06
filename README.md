@@ -56,8 +56,10 @@ RT introduces functional built-in macros to extend CPP’s token manipulation ca
 
 A macro form of `#assign`. Takes two *clauses* — either parenthesized for literal input, or bracketed for expanded input.
 
+```c
   _ASSIGN (FOO) (42)           // literal name and body
   _ASSIGN [BAR] [BAZ]          // both name and body expanded
+```
 
 - ( ... ) ⇒ literal clause (no expansion)
 - [ ... ] ⇒ expanded clause (macros are recursively expanded)
@@ -70,17 +72,21 @@ This expands to nothing but defines (or overwrites) a macro binding. New macros 
 
 These help translate between CPP’s two list types: space-separated `token_list` and comma-separated `argument_list`.
 
+```c
   _TO_ARG_LIST(tokens...)        // a b c → a,b,c
   _TO_TOKEN_LIST(a,b,c)          // a,b,c → a b c
+```
 
 ---
 
 ### Token List Operators
 
+```c
   _FIRST(tokens...)              // first token
   _REST(tokens...)               // all but first
   _MAP(f, tokens...)             // f(a) f(b) f(c)
   _AL_MAP(f, a1, a2, ...)        // f(a1) f(a2) f(a3)
+```
 
 - _MAP operates on a space-separated token list.
 - _AL_MAP operates on a comma-separated argument list.
@@ -91,10 +97,12 @@ These help translate between CPP’s two list types: space-separated `token_list
 
 These treat token presence as boolean truth.
 
+```c
   _IF(p, a, b)                   // if p is non-empty → a else → b
   _NOT(p)                        // if p is empty → TRUE else →
   _AND(a1, a2, ...)              // all must be non-empty
   _OR(a1, a2, ...)               // returns first non-empty
+```
 
 Notes:
 - _AND() expands to nothing if any argument is empty.
@@ -104,13 +112,17 @@ Notes:
 
 ### Token-Level Predicate
 
+```c
   _IS_IDENTIFIER(x)             // if x is a valid identifier → x else →
+```
 
 ---
 
 ### Token Construction
 
+```
   _PASTE(a, b, c)               // pastes into single token
+```
 
 All tokens are concatenated into one; result must be a valid CPP token (e.g., identifier). Invalid pastes result in a compiler error.
 
