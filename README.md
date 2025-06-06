@@ -1,6 +1,6 @@
 # RT CPP Extensions and GCC Toolchain
 
-> *Status: Core system functional. CPP extensions fully implemented for GCC 12.4.1 on Debian 12.10. Documentation in progress.*
+> *Status: Scripts build a standalone GCC 12.4.1 on Debian 12.10 with an option for RT's CPP extensions. Directives #macro and #assign are included. The builtin macros are being incorporated, and will hopefully be released soon.*
 
 This repository provides a standalone GCC installation toolkit with optional support for the RT extensions to the C preprocessor. It includes reusable build scripts, macro programming infrastructure, and documentation for the extended CPP environment.
 
