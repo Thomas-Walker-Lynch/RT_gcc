@@ -1,132 +1,91 @@
-# Standalone GCC installation with optional  RT cpp extensions
+# RT CPP Extensions and GCC Toolchain
 
-## State of the scripts 
+> *Status: Core system functional. CPP extensions fully implemented for GCC 12.4.1 on Debian 12.10. Documentation in progress.*
 
-The default branch is 'core_developers_branch'.  (It is not 'master'.)
+This repository provides a standalone GCC installation toolkit with optional support for the RT extensions to the C preprocessor. It includes reusable build scripts, macro programming infrastructure, and documentation for the extended CPP environment.
 
-The scripts in the script_Deb-12.10_gcc-12.4.1🖉/ directory are currently building gcc-12.4.1 on a Debian-12.10 system. They also work to build gcc-12.4.1 with the optional RT extensions to cpp.
-
-If you are on another system, or using another version of gcc, if the script_Deb-12.10_gcc-12.4.1🖉/ scripts work for you, please note that here.
-
-If you had to modify the scripts to make the install work, please make a new directory with your system and gcc version, and copy and modify the scripts there.
-
-The scripts in the script_gcc-15🖉/ directory do not work. It was difficult to bootstrap a standalone install of the latest gcc, on Deb-12, but I gave it a try. Hence the fall back to the version 12.
-
-## Documentation
-
-Apart from this file, the text documents are written in emacs org format.
-
-To see documentation on how to do the build, read the README in the appropriate script directory. Also note that the scripts themselves list the commands and options used, in the order they are used.
-
-
-## The RT extentions
-
-The RT extensions won't let you write recrusive macros. My apologies to my cpp magic friends. However, they will let you write sets, and to associate values with set members.  See the documents directory more information.
-
-### `#rt_macro`
-
-Defines a macro in standard ISO form, using token literal parsing and parameter substitution. Basically it is functional form of `#define` where the body is contained within parenthesis, and need not be on one line.
-
-#### Syntax (EBNF):
-
-```
-directive     ::= "#rt_macro" name params body ;
-
-name          ::= identifier ;
-
-params        ::= "(" param_list? ")" ;
-param_list    ::= identifier ("," identifier)* ;
-
-body          ::= "(" literal? ")" ;
-
-literal       ::= ; sequence parsed into tokens without expansion
-
-; whitespace, including newlines, is ignored
-```
-
-If you need an unbalanced paren, define a macro that expands to a paren and use that. Parenthesis need only to match when the body is lexed. Note that the parameter list can be empty, but it is required, both on the definition and the call.
-
-### `#assign`
-
-This is another variation on #define. Currently it can not be used to define function like macros. 
-
-Unlike define, there is an option to expand either or both of the name and body expressions before the definition is registered. When the name is expanded, it must expand to an identifier that can be used as a nmae.
-
-Should the name or body contain macros that are expanded, these expansions are done before the macro is put in the symbol table.  Which is why this directive is called 'assign'.
-
-If the assigned name arrives at the directory with a definition, though it is disabled, `#assign` will clear the disabled flag. This does not enable recursion, because disabling (so called painting) is done by the evaluator.  However, it does enable one more step of evaluation for a recursive macro each time assign is called. 
-
-#### Syntax (EBNF):
-
-    cmd        ::= "#assign" name body ;
-
-    name       ::= clause ;
-    body       ::= clause ;
-
-    clause     ::= "(" literal? ")" | "[" expr? "]" ;
-
-    literal    ::= ; sequence parsed into tokens
-    expr       ::= ; sequence parsed into tokens with recursive expansion of each token
-
-    ; white space, including new lines, is ignored.
+The RT extensions are designed to modernize CPP with structural programming primitives, support for token/argument list transformations, and controlled macro evaluation. They enable the use of type templates and reusable include files in plain C, without altering standard CPP behavior.
 
 ---
 
-#### Examples
+## Repository Structure
 
-See the `developer/experiments` directory for more examples.
+* `developer/` — Core documentation, macro definitions, experiments, and examples
+* `script_Deb-12.10_gcc-12.4.1🖉/` — Working scripts for building GCC 12.4.1 on Debian 12.10, with or without the RT extensions
+* `script_gcc-15🖉/` — Incomplete scripts for GCC 15.x (experimental)
+* `LICENSE.text` — MIT License
 
-```
-#assign (A_NAME) (3)
-```
+---
 
-Is the same as:
+## How to Build
 
-```
-#define A_NAME 3
-```
+To begin a build, first set up your environment:
 
-```
-#define B_NAME Fred
-#assign [B_NAME] (5)
+```bash
+. env_developer
 ```
 
-Is the same as:
+Each script directory contains its own `README.org` and a set of Bash scripts that can be run in order. They are idempotent and reflect the actual command sequence used during the build.
 
-```
-#define Fred 5
-```
+---
 
-### `RT_CAT(SEP, ...)`
+## About the RT Extensions
 
-A builtin macro utility for token concatenation with an explicit separator.
+The RT CPP extensions introduce two new macro directives:
 
-Unlike the standard `##` token pasting, `RT_CAT` allows insertion of a custom separator, and works with variadic arguments. 
+### `#macro`
 
-**Example:**
+A multiline, ISO-style function macro with literal token bodies and a strict parameter list. Enables readable macro logic that spans lines without escape characters.
 
-```
-RT_CAT(_, foo, bar, baz)  // expands to: foo_bar_baz
-```
-```
-RT_CAT(, foo, bar, baz)  // expands to: foobarbaz
-```
+### `#assign`
 
-## Project Structure / Building
+A declarative form of macro definition that allows both the macro name and body to be defined via either literal or expanded token expressions. Unlike `#define`, `#assign` enables delayed evaluation through bracketed forms.
 
-The top level directory is for project overhead files.  Development work is done in the 'developer' directory.  If someday there is a test bench it will go in the 'tester' directory.
-
-Begin the build process by editing the environment setting script, `env_developer` so that it goes to the correct build script directory, then source it.
-
-```
-> . env_developer
+```c
+#assign (FOO) (42)        // literal
+#assign [BAR] [BAZ]       // expanded name and body
 ```
 
-The build script directory will have a README.org, as well as bash scripts that can be read directly.
+Both directives support structured token handling and follow evaluation rules that prevent recursion via standard CPP coloring.
 
+A built-in macro `_ASSIGN` mirrors the `#assign` directive and can be used within macro logic.
+
+---
+
+## Feature Highlights
+
+* Structural support for:
+
+  * Token lists and argument lists
+  * Set membership and associative lookups
+  * Conditional logic and functional mapping
+  * Token pasting with enforced identifier checks
+
+* Declarative macros for:
+
+  * Set creation: `_SET_ADD`, `_SET_IN`
+  * Associative sets: `_ASET_ADD`, `_ASET_GET`
+  * List linking: `_LIST_CONNECT`, `_LIST_NEXT`
+
+All constructs respect the rules of standard CPP expansion, but introduce functional primitives such as `_MAP`, `_IF`, `_NOT`, and `_PASTE`.
+
+---
+
+## Documentation
+
+All longform documentation is written in Emacs Org-mode format and located under `developer/docs/`. These include:
+
+* `cpp_ext_user_manual.org` — The full RT preprocessor extension specification
+* `README.org` files in each build script directory
+* `experiments/` — Example use cases, macro-driven constructs, and test expansions
+
+---
 
 ## License
 
-This project is licensed under the **MIT License**.  
+This project is licensed under the **MIT License**.
 See the `LICENSE.text` file for full terms.
 
+---
+
+If you're experimenting with macro-based metaprogramming in C — or building portable, reusable preprocessor templates — this project may be what you're looking for.

@@ -1,0 +1,203 @@
+#+TITLE: RT Extensions to the C Preprocessor
+#+AUTHOR: Thomas Walker Lynch
+#+OPTIONS: toc:nil
+#+OPTIONS: ^:nil
+
+* Overview
+
+The RT extensions modernize the C preprocessor (CPP) to support structural programming primitives, sets, associative maps, and token/argument list manipulation.
+
+These extensions are intended to support C include files that are type templated, and can be included multiple times with different type template bindings. However, these functions add flexibility to CPP that will be appreciated in many contexts.
+
+The RT extensions do not change existing CPP behavior.
+
+The RT extensions also do not facilitate recursive programming. During a given evaluation, expanded macros are colored,  and thereafter their names are taken literally. On a conciliatory note, among the new built-ins is a map function.
+
+* Review of Conventional CPP
+
+CPP has two explicit list types:
+
+- `token_list`: A stream of tokens as produced by the lexer.
+- `argument_list`: A comma-separated list of `token_list` elements.
+
+Although CPP has these two types of lists, there are few operators in the language for supporting this structure. Hence, the RT extensions contain some.
+
+CPP's `#define` is limited in that the name and body are not evaluated, and that it an entire definition must be on line line. The RT extensions provide two new directives to address these limitations.
+
+* `#macro`
+
+The `#macro` directive defines a function-style macro with named parameters and a token body enclosed in balanced parentheses. The parameter list is required, but may be empty.
+
+#+BEGIN_SRC c
+#macro NAME(arg1 ,arg2 ,...) ( token sequence )
+#+END_SRC
+
+** BNF for `#macro`
+
+#+BEGIN_SRC bnf
+directive     ::= "#macro" name params body ;
+
+name          ::= identifier ;
+
+params        ::= "(" param_list? ")" ;
+param_list    ::= identifier ("," identifier)* ;
+
+body          ::= paren_clause ;
+paren_clause  ::= "(" literal? ")" ;
+
+literal       ::= ; sequence parsed into tokens without expansion
+
+; whitespace, including newlines, is ignored
+#+END_SRC
+
+Unlike `#define`, which requires the entire macro to reside on a single line, `#macro` allows its body clause to span multiple lines with no end-of-line escapes being required.
+
+As with `#define`, the `#macro` name is not evaluated, and the body is stored as a literal token sequence that will only be expanded when the macro is called.
+
+The body-delimiting parentheses need to balance only at the time the definition is scanned by the lexer. If the programmer desires to include unbalanced parentheses within the body, then the programmer should first create a macro such as `#define OPEN (` or `#define CLOSE )`, and then use those in the body clause.
+
+
+* `#assign`
+
+The `#define` directive has both a declarative and function form. The `#assign` variation of `#define` does not have a function form.
+
+With `#define`, neither the name nor the body are expanded at time of definition. With `#assign`, the name and/or the body can optionally be expanded by using brackets for the respective clause, rather than parentheses.
+
+#+BEGIN_SRC c
+#assign (literal NAME) (literal body)
+#assign (literal NAME) [expanded body]
+#assign [expanded NAME] (literal body)
+#assign [expanded NAME] [expanded body]
+#+END_SRC
+
+As with `#macro`, the clauses in `#assign` can be multi-line. The clauses are contained within the specified delimiters, which must balance at the time of definition, when the lexer scans them. This happens before any expansion.
+
+** BNF for `#assign`
+
+#+BEGIN_SRC bnf
+cmd        ::= "#assign" name body ;
+
+name       ::= clause ;
+body       ::= clause ;
+
+clause     ::= "(" literal? ")" | "[" expr? "]" ;
+
+literal    ::= ; sequence parsed into tokens
+expr       ::= ; sequence parsed into tokens with recursive expansion of each token
+
+; white space, including new lines, is ignored.
+#+END_SRC
+
+The name clause must resolve to a valid name identifier.
+
+There is a corresponding built-in macro form `_ASSIGN name body` which expands to nothing, but has the side effect of creating a definition.
+
+* New Built-in Macros
+
+Each new built-in macro has a `_` prefix.
+
+** `_ASSIGN`
+
+The same syntax and evaluation semantics as for `#assign` apply.
+
+#+BEGIN_SRC c
+_ASSIGN (literal NAME) (literal body)
+_ASSIGN (literal NAME) [expanded body]
+_ASSIGN [expanded NAME] (literal body)
+_ASSIGN [expanded NAME] [expanded body]
+#+END_SRC
+
+The `_ASSIGN` macro has the same behavior as the `#assign` directive and, unlike other macros, is followed by, not one, but two delineated clauses. Each clause may be parenthesized (for a literal) or bracketed (for an expanded).
+
+The `_ASSIGN` macro expands to nothing. Its only effect is to create or update a macro binding.
+
+When a macro is created with `_ASSIGN`, it is colored. Hence, the newly created macro cannot be expanded within the same macro where it was defined.
+
+
+* List Transformations
+
+#+BEGIN_SRC c
+_TO_ARG_LIST( <token_list> )      // Converts tokens into an argument list
+_TO_TOKEN_LIST( <argument_list> ) // Flattens argument list into token stream
+#+END_SRC
+
+These form the basis for transitioning between structure-aware and structure-neutral representations.
+
+* Token List Operators
+
+#+BEGIN_SRC c
+_FIRST( <token_list> )            // First token
+_REST( <token_list> )             // All tokens after the first
+_MAP(f ,<token_list>)             // f(token1) f(token2) ...
+_AL_MAP(f ,<argument_list>)       // f(arg1) f(arg2) ...
+#+END_SRC
+
+These enable iteration-like behavior over static macro arguments.
+
+* Logic Primitives
+
+#+BEGIN_SRC c
+_IF(p ,a ,b)                      // If p is present, expand to a; else b
+_NOT(p)                           // Expand to TRUE if p is empty, else empty
+#+END_SRC
+
+Logical presence is defined by *token existence*, not token content. Empty argument lists are `false`. All others are `true`.
+
+#+BEGIN_SRC c
+_AND( <arg1> ,<arg2> ,... )       // Returns nothing if any arg is empty
+_OR( <arg1> ,<arg2> ,... )        // Returns first non-empty argument
+#+END_SRC
+
+Missing trailing arguments are *not* detected by `_AND`. Appending a `TRUE` token is recommended to guard edge cases.
+
+* Token-Level Checks
+
+#+BEGIN_SRC c
+_IS_IDENTIFIER( <arg> )          // If arg is an identifier, expands to it; else nothing
+#+END_SRC
+
+* Pasting and Construction
+
+#+BEGIN_SRC c
+_PASTE( <token1> ,<token2> ,... ) // Combines all tokens into a single token
+#+END_SRC
+
+Pasting is only valid if the result is a valid preprocessing token (e.g., identifier). Invalid pastes will trigger compiler diagnostics.
+
+* Usage Example
+
+(To be added)
+
+* Sets
+
+Sets are macros whose membership is defined by naming convention. All set operations are evaluated through presence of a named binding.
+
+#+BEGIN_SRC c
+#define _SET_ADD(set ,x) ASSIGN( _PASTE(__SET_ ,set ,_ ,x), )
+#define _SET_IN(set ,x)  _NOT(_PASTE(__SET_ ,set ,_ ,x))
+#+END_SRC
+
+A macro such as `__SET_myset__foo` existing in the preprocessor environment marks `foo` as a member of `myset`.
+
+* Associative Sets (ASet)
+
+Associative sets allow storing values indexed by a key:
+
+#+BEGIN_SRC c
+#assign _ASET_ADD(set ,x ,y) (
+  ASSIGN(_PASTE(__ASET_ ,set ,_ ,x))
+  ASSIGN(_PASTE(__ASET_ITEM_ ,set ,_ ,x))
+)
+
+#assign _ASET_GET(set ,x) (
+  _IF(
+    _PASTE(__ASET_ ,set ,_ ,x)
+    ,_PASTE(__ASET_ITEM_ ,set ,_ ,x)
+    ,
+  )
+)
+#+END_SRC
+
+If `x` is in the set, `_ASET_GET` returns the associated value; else nothing.
+
+* (End of manual — more modules to be added as completed.)

@@ -9,4 +9,4 @@ export REPO_HOME="$(dirname "$script_afp")"
 export DEVELOPER="$REPO_HOME/developer"
 export SCRIPT_DIR="$DEVELOPER"/script_Deb-12.10_gcc-12.4.1🖉
 
-cd "$SCRIPT_DIR"
+cd "$DEVELOPER"

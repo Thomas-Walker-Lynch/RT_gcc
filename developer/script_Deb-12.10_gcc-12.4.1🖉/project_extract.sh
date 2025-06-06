@@ -3,7 +3,7 @@
 # Will not extract if target already exists
 # Delete any malformed extractions before running again
 #
-# gcc is not installed as a tar ball, rather it is git cloned as part of the downloading from upstream sources.
+# gcc is not installed as a tar file, rather it is git cloned directly into source/ as part of the downloading from upstream sources. Hence, there is nothing to extract.
 
 set -euo pipefail
 
