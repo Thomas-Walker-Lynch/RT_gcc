@@ -130,33 +130,6 @@ All tokens are concatenated into one; result must be a valid CPP token (e.g., id
 
 These primitives enable set manipulation, conditional macros, structural mapping, and functional programming patterns — within standard C preprocessor constraints.
 
-## Feature Highlights
-
-* Structural support for:
-
-  * Token lists and argument lists
-  * Set membership and associative lookups
-  * Conditional logic and functional mapping
-  * Token pasting with enforced identifier checks
-
-* Declarative macros for:
-
-  * Set creation: `_SET_ADD`, `_SET_IN`
-  * Associative sets: `_ASET_ADD`, `_ASET_GET`
-  * List linking: `_LIST_CONNECT`, `_LIST_NEXT`
-
-All constructs respect the rules of standard CPP expansion, but introduce functional primitives such as `_MAP`, `_IF`, `_NOT`, and `_PASTE`.
-
----
-
-## Documentation
-
-All longform documentation is written in Emacs Org-mode format and located under `developer/docs/`. These include:
-
-* `cpp_ext_user_manual.org` — The full RT preprocessor extension specification
-* `README.org` files in each build script directory
-* `experiments/` — Example use cases, macro-driven constructs, and test expansions
-
 ---
 
 ## License
@@ -164,6 +137,3 @@ All longform documentation is written in Emacs Org-mode format and located under
 This project is licensed under the **MIT License**.
 See the `LICENSE.text` file for full terms.
 
----
-
-If you're experimenting with macro-based metaprogramming in C — or building portable, reusable preprocessor templates — this project may be what you're looking for.
