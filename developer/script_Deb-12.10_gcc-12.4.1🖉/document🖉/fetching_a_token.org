@@ -1,0 +1,92 @@
+#+TITLE: Token Fetching Routines in libcpp
+#+AUTHOR: Thomas
+#+DATE: 2025-06-10
+#+OPTIONS: toc:t
+
+* Getting a Token
+
+There are many routines for getting a token in libcpp, each tuned for different phases of preprocessing. This guide summarizes the key interfaces, grouped by their expansion behavior.
+
+Note that the term *expansion* is overloaded in libcpp:
+
+1. One meaning refers to **macro expansion** — replacing a macro call with its definition (possibly recursively).
+2. Another refers to the **macro definition buffer** itself: macros store an array of tokens as their "expansion". Adding a token to this array is said to "add an expansion token", which is unrelated to expanding a macro.
+
+---
+
+* No Macro Expansion
+
+** `lex.cc::_cpp_lex_token(pfile)`
+
+- Returns a pointer to the next token without macro expansion.
+- It does handle important preprocessor logic:
+  - Skipping gated code (`#if 0`)
+  - Handling `#line` or `#pragma`
+  - Deferred pragma state
+- This is the general-purpose low-level token fetch used during parsing — but it still obeys the logical flow of the file.
+
+** `macro.cc::lex_expansion_token`
+
+- Lexes a token and places it into the macro's `expansion` array.
+- The token is *not* processed in the usual way — it does *not* honor `#if` skipping, macro argument parsing, or directive detection.
+- Used by `create_iso_definition()` when parsing macro bodies.
+
+** `lex.cc::_cpp_lex_direct(pfile)`
+
+- Very low-level lexer function.
+- Called *only* by `_cpp_lex_token`.
+- Assumes `pfile->cur_token` is pre-set; writes directly into that memory.
+- Bypasses all macro, directive, or skipping logic.
+- Should not be used outside of tightly controlled contexts — *not* a public interface.
+
+---
+
+* With Macro Expansion
+
+** `macro.cc::cpp_get_token_1(pfile, &src_loc)`
+
+- Returns the next token with full macro expansion.
+- Also returns `location_t` via an out parameter.
+- This is the recommended entry point for frontends or extensions that need both token and position.
+- Internally calls `_cpp_lex_token` and handles expansion.
+
+** `macro.cc::cpp_get_token(pfile)`
+
+- Thin wrapper around `cpp_get_token_1`, but discards the location.
+- Used in internal code where location is unnecessary.
+
+** `macro.cc::cpp_get_token_no_padding(pfile)`
+
+- Calls `cpp_get_token`, but skips tokens of type `CPP_PADDING`.
+- Useful when padding tokens are irrelevant (e.g. while collecting macro arguments).
+
+---
+
+* RT Extension
+
+** `rt_extensions.cc::get_token_noexpand(pfile)`
+
+- Returns one unexpanded token by value.
+- Does *not* use the regular token stream; instead, it temporarily sets `pfile->cur_token` to a local buffer, calls `_cpp_lex_direct`, and restores the original pointer.
+- Unlike `lex_expansion_token`, it does *not* store the result in a macro; it simply returns the token.
+- This is appropriate for previewing the next token *without affecting* the token stream or macro state.
+
+However, for parsing structured clauses such as macro bodies — especially those that may include `#if`/`#endif` constructs — it is better to use `_cpp_lex_token`, to match the conditional skipping behavior of `cpp_get_token_1`.
+
+---
+
+* Summary Table
+
+| Function                    | Expansion | Skips `#if 0` | Stores Token | Returns Token | Returns Location |
+|-----------------------------+-----------+---------------+---------------+----------------+-------------------|
+| `lex_expansion_token`       | ❌        | ❌            | ✔ (into macro) | ❌             | ✔                |
+| `_cpp_lex_direct`           | ❌        | ❌            | ✔ (in-place)   | ❌             | ✔                |
+| `_cpp_lex_token`            | ❌        | ✔             | ✔              | ✔             | ✔                |
+| `cpp_get_token`             | ✔         | ✔             | ✔              | ✔             | ❌               |
+| `cpp_get_token_1`           | ✔         | ✔             | ✔              | ✔             | ✔                |
+| `cpp_get_token_no_padding` | ✔         | ✔             | ✔              | ✔ (no padding) | ❌               |
+| `get_token_noexpand`        | ❌        | ❌            | ❌              | ✔ (by value)   | ✔                |
+
+---
+
+Let me know if you'd like to cross-link these to their actual definitions or integrate them into a larger RT CPP developer manual.

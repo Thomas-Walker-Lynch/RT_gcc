@@ -1,0 +1,101 @@
+#+TITLE:  CPP bump buffer
+#+AUTHOR:  Thomas
+#+DATE:   2025-06-08
+#+OPTIONS: toc:nil ^:nil
+
+* References
+https://www.chiark.greenend.org.uk/doc/cpp-4.3-doc/cppinternals.html
+
+#+begin_quote
+**References**
+
+- *libcpp/lex.cc* and *libcpp/macro.cc* (GCC ≥ 12)    
+- Ian Lance Taylor, “*Inside libcpp*”, GNU Cauldron 2018 slides    
+#+end_quote
+
+* The arena
+/libcpp/ keeps a bump-pointer arena inside =cpp_reader=.  Two routines are used to directly interface with it: =_cpp_reserve_room()=, and =_cpp_commit_buff()=.
+
+
+
+| Helper                         | Exact responsibility                                  |
+|--------------------------------+--------------------------------------------------------|
+| =_cpp_reserve_room()=          | Provide tentative space without moving the cursor      |
+| =_cpp_commit_buff()=           | Finalise the previous reservation and move the cursor  |
+
+* _cpp_reserve_room
+
+Defined in `internal.h`:
+
+#+begin_src c
+static inline void *_cpp_reserve_room (cpp_reader *pfile, size_t have, size_t extra){
+  if (BUFF_ROOM (pfile->a_buff) < (have + extra))
+    _cpp_extend_buff (pfile, &pfile->a_buff, extra);
+  return BUFF_FRONT (pfile->a_buff);
+}
+#+end_src
+
+Example invocation found in  `macro.cc::create_iso_definition`:
+
+#+begin_src c
+  macro = _cpp_new_macro(
+    pfile
+    ,cmk_macro
+    ,_cpp_reserve_room(pfile, 0, sizeof (cpp_macro))
+  );
+#+end_src
+
+=_cpp_reserve_room()= returns a pointer to a buffer of the specified size, `have` + `extra`. The `have` argument is interesting, as it can be changed from call to call, hence it is more for the programmer than for the function.
+
+The buffer returned is not generally a unique buffer. It might be the same one that was returned on the previous invocation of =_cpp_reserve_room()=, or it will be a new buffer if `_cpp_extend_buff` was called during allocation.  In this latter case, a new larger buffer is made, and the old buffer is copied into it.  The new buffer is then returned.
+
+Hence, each call to =_cpp_reserve_room()= requires that all pointers into the buffer that existed before the call be considered stale. After the call, the only valid pointer to the buffer is the one that =_cpp_reserve_room()= returns.
+
+
+* `_cpp_commit_buff`
+
+Defined in `lex.cc`:
+
+#+begin_src c
+void *_cpp_commit_buff (cpp_reader *pfile, size_t size){
+  void *ptr = BUFF_FRONT (pfile->a_buff);
+
+  if (pfile->hash_table->alloc_subobject)
+    {
+      void *copy = pfile->hash_table->alloc_subobject (size);
+      memcpy (copy, ptr, size);
+      ptr = copy;
+    }
+  else
+    BUFF_FRONT (pfile->a_buff) += size;
+
+  return ptr;
+}
+#+end_src
+
+A call to =_cpp_commit_buff()= finalizes the accumulation of reserved room, and sets the buffer aside as a dedicated allocation. Once =_cpp_commit_buff()= is called, a subsequent call to =_cpp_reserve_room()= will start fresh with a new buffer.  
+
+When `! pfile->hash_table->alloc_subobject`, the buffer will be committed with `BUFF_FRONT (pfile->a_buff) += size;`  
+
+However, when `pfile->hash_table->alloc_subobject` is true, the buffer will be copied when it is committed. Hence, it is important to consider all pointers into the buffer created during the one or more calls to =_cpp_reserve_room()= to be stale after a call to =_cpp_commit_buff()=, and to subsequently only use the pointer that =_cpp_commit_buff()= returns. 
+
+According to `GPT o3`, which hasn't gotten much right thus far,"`alloc_subobject` is non-null only while installing a macro into the hash table (create_definition etc.)."
+
+* Deallocating a `_cpp_reserve_room` buffer yet to be committed
+
+Each subsequent call  to `_cpp_reserve_room`, even if it is unrelated to the prior one, either uses the buffer it finds at `pfile->a_buff`, or if it is not large enough, replaces it with a larger copy. Consequently, there is no concept of 'deallocating a `_cpp_reserve_room` buffer'.
+
+However, according to `o3`, if one desired:
+
+#+begin_src c
+  void *mark = _cpp_get_buff (pfile);   /* snapshot cursor */
+  ...
+  _cpp_release_buff (pfile, mark);      /* rewind to mark  */
+#+end_src
+
+
+* Deallocating a committed `_cpp_reserve_room` buffer
+
+There is no facility for this. Detritus collects until CPP moves on to the next translation unit and then everything is released.
+
+

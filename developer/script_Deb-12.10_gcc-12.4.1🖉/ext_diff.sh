@@ -5,8 +5,8 @@ set -euo pipefail
 source "$(dirname "$0")/environment.sh"
 
 # Check required env vars
-if [[ -z "${ROOT:-}" ]]; then
-  echo "❌ ROOT environment variable is not set. Aborting."
+if [[ -z "${DEVELOPER:-}" ]]; then
+  echo "❌ DEVELOPER environment variable is not set. Aborting."
   exit 1
 fi
 if [[ -z "${SCRIPT_DIR:-}" ]]; then

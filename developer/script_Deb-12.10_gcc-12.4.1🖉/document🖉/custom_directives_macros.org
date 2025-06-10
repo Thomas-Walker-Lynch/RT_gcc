@@ -1,0 +1,73 @@
+#+TITLE: Adding Custom Directives and Built-in Macros in libcpp
+#+AUTHOR: Thomas
+#+DATE: 2025-06-10
+#+OPTIONS: toc:t
+
+* Custom Preprocessor Directives
+
+To add a new `#directive` (e.g. `#assign`, `#macro`), changes must be made in several files within libcpp.
+
+** `directives.cc`
+
+- Midway through the file, there is a static table mapping directive names to their handlers.
+- Add an entry here for your new directive:
+  #+begin_src c
+  { "assign", RT_ASSIGN, false },
+  { "macro",  RT_MACRO,  false },
+  #+end_src
+
+- Define your handler in the switch for `handle_directive`. Place the handler logic (e.g., `handle_assign_directive`) in the section titled:
+  #+begin_quote
+  /* RT Extensions */
+  #+end_quote
+
+** Tip:
+  Group your RT extensions near the end of the file for easy maintenance.
+
+---
+
+* Custom Built-in Macros
+
+To define new built-in macros (e.g. `_CAT`, `_MAP`), several files need coordinated updates.
+
+** `include/cpplib.h`
+
+- Add a new entry to the `enum cpp_builtin_type`:
+  #+begin_src c
+  BT_CAT,
+  #+end_src
+
+- This enum distinguishes the macro’s kind in logic dispatch.
+
+** `init.cc`
+
+- Extend the `builtin_array[]` definition:
+  #+begin_src c
+  B("_CAT", BT_CAT, true),
+  #+end_src
+
+- The third parameter (`true`) indicates that a redefinition warning should be issued if the macro is redefined in user code.
+- *Important:* The final entries in the table (`__DATE__`, `__TIME__`, etc.) are position-sensitive. Insert new macros near the top or middle, not the end.
+
+** `macros.cc`
+
+- This is where the actual macro expansion logic resides.
+- Your `handle_builtin_macro` function will receive a `cpp_builtin_type` enum and dispatch accordingly.
+- Add your implementation (e.g., for `_CAT`) in the RT Extensions section near the end of `macros.cc`.
+
+  For example:
+  #+begin_src c
+  case BT_CAT:
+    return expand_cat_macro(pfile, ...);
+  #+end_src
+
+- If your macro uses token splicing, argument unpacking, or nesting, consider isolating each macro as a separate function for clarity and testability.
+
+---
+
+* Notes
+
+- All RT Extension code is grouped under labeled sections (e.g., `/* RT Extensions */`) for both directives and built-in macros. This helps maintain a clean separation from upstream GCC code.
+- If your extensions modify memory allocation, token arena behavior, or call back into the lexer, be sure to test under both expanded and unexpanded modes.
+
+Let me know if you'd like this converted into a template or included in your developer README.

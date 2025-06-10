@@ -402,7 +402,22 @@ struct builtin_macro
 #define B(n, t, f)    { DSC(n), t, f }
 static const struct builtin_macro builtin_array[] =
 {
-  B("RT_CAT",		 BT_RT_CAT,        true),  /* RT Extension */
+
+  B("_ASSIGN",		 BT_RT_ASSIGN,      true), 
+  B("_TO_ARG_LIST",	 BT_RT_TO_ARG_LIST,      true), 
+  B("_TO_TOKEN_LIST",	 BT_RT_TO_TOKEN_LIST,      true), 
+  B("_FIRST",		 BT_RT_FIRST,      true), 
+  B("_REST",		 BT_RT_REST,      true), 
+  B("_MAP",		 BT_RT_MAP,      true), 
+  B("_AL_MAP",		 BT_RT_AL_MAP,      true), 
+  B("_IF",		 BT_RT_IF,      true), 
+  B("_NOT",		 BT_RT_NOT,      true), 
+  B("_AND",		 BT_RT_AND,      true), 
+  B("_OR",		 BT_RT_OR,      true), 
+  B("_IS_IDENTIFIER",	 BT_RT_IS_IDENTIFIER,      true), 
+  B("_IS_NAME",		 BT_RT_IS_NAME,      true), 
+  B("_PASTE",		 BT_RT_PASTE,      true), 
+
 
   B("__TIMESTAMP__",	 BT_TIMESTAMP,     false),
   B("__TIME__",		 BT_TIME,          false),

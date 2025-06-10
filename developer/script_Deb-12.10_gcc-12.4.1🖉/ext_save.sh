@@ -8,8 +8,8 @@ source "$(dirname "$0")/environment.sh"
 # Appends _orig after the .cc extension (e.g., macro.cc → macro.cc_orig)
 # Files remain in place but can be manually diffed or restored if needed
 
-if [[ -z "${ROOT:-}" ]]; then
-  echo "❌ ROOT environment variable is not set. Aborting."
+if [[ -z "${DEVELOPER:-}" ]]; then
+  echo "❌ DEVELOPER environment variable is not set. Aborting."
   exit 1
 fi
 if [[ -z "${SCRIPT_DIR:-}" ]]; then

@@ -6,8 +6,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 
 export REPO_HOME=$(dirname "$script_afp")
-export DEVELOPER="$REPO_HOME/developer"
-export SCRIPT_DIR="$DEVELOPER"/script_Deb-12.10_gcc-12.4.1🖉
+export TESTER="$REPO_HOME/tester"
 
 export PATH="$REPO_HOME/release/amd64_Deb-12.10_gcc-12.4.1/bin:$PATH"
 
+cd "$TESTER"

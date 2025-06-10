@@ -154,6 +154,7 @@ Missing trailing arguments are *not* detected by `_AND`. Appending a `TRUE` toke
 
 #+BEGIN_SRC c
 _IS_IDENTIFIER( <arg> )          // If arg is an identifier, expands to it; else nothing
+_IS_NAME( <arg> )          // If arg is an identifier, expands to it; else nothing
 #+END_SRC
 
 * Pasting and Construction

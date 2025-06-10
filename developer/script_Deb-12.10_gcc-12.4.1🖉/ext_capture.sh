@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(dirname "$0")/environment.sh"
 
 
-echo "⚠️  You probably don't want to run this script. The files in \$ROOT/script_Deb-12.10_gcc-12.4.1🖉/library are intended to be the authoritative copies."
+echo "⚠️  You probably don't want to run this script. The files in \$DEVELOPER/script_Deb-12.10_gcc-12.4.1🖉/library are intended to be the authoritative copies."
 echo "So you did the bad thing and edited the files directly in the GCC source tree? Then this script is for you. ;-)"
 echo
 
@@ -18,8 +18,8 @@ else
 fi
 
 
-if [[ -z "${ROOT:-}" ]]; then
-  echo "❌ ROOT environment variable is not set. Aborting."
+if [[ -z "${DEVELOPER:-}" ]]; then
+  echo "❌ DEVELOPER environment variable is not set. Aborting."
   exit 1
 fi
 if [[ -z "${SCRIPT_DIR:-}" ]]; then
@@ -30,8 +30,8 @@ SRCDIR="library/"
 DESTDIR="$GCC_SRC/libcpp/"
 
 
-SRCDIR="$ROOT/source/gcc-12.2.0/libcpp"
-DESTDIR="$ROOT/script_Deb-12.10_gcc-12.4.1🖉/library"
+SRCDIR="$DEVELOPER/source/gcc-12.2.0/libcpp"
+DESTDIR="$DEVELOPER/script_Deb-12.10_gcc-12.4.1🖉/library"
 
 if [[ ! -d "$SRCDIR" ]]; then
   echo "❌ Source directory '$SRCDIR' does not exist."
