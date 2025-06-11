@@ -4800,7 +4800,7 @@ static enum clause_parse_status clause_parse(
         ,terminator
       );
 
-    CPP_OPEN_SQUARE:
+    CPP_OPEN_PAREN:
       return clause_parse_1(
         pfile 
         ,CPD_BALANCED
@@ -4835,7 +4835,6 @@ static enum clause_parse_status clause_parse(
 }
 
 
-*/
 static cpp_hashnode *
 name_clause_is_name(cpp_reader *pfile, const cpp_macro *macro)
 {
