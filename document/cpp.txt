@@ -1,0 +1,489 @@
+by Jonathan Heathcote
+
+C Pre-Processor Magic
+The C Pre-Processor (CPP) is the somewhat basic macro system used by the C programming language to implement features such as #include and #define which allow very simple text-substitutions to be carried out at compile time. In this article we abuse the humble #define to implement if-statements and iteration.
+
+Before we begin, a disclaimer: these tricks, while perfectly valid C, should not be considered good development practice and should almost certainly not be used for "real work". That said it can totally be used for fun home-automation projects... Finally, whilst these tricks have been found to work under GCC and Clang's CPP implementations, I've heard that they might not under Microsoft's compilers.
+
+The humble #define
+Most C programmers will be familiar with the common-or-garden #define preprocessor directive. This directive allows the programmer to define a simple text-substitution macro. For example:
+
+#define VERSION 123
+
+// ... later ...
+printf("Version: %d\n", VERSION);
+In this snippet we define a macro VERSION which the CPP will look for and replace with 123. We can specify any valid sequence of C tokens (that is, fragments of valid C though these need not be syntactically valid, for example , 123 { hello would be acceptable). We can see this in action by feeding this to CPP like so:
+
+cpp << EOF
+#define VERSION 123
+
+// ... later ...
+printf("Version: %d\n", VERSION);
+EOF
+Which produces:
+
+# 1 "<stdin>"
+# 1 "<built-in>"
+# 1 "<command-line>"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 1 "<command-line>" 2
+# 1 "<stdin>"
+
+
+
+printf("Version: %d\n", 123);
+This is actually the raw input that your compiler sees and compiles. The lines starting with # are not preprocessor directives but rather compiler hints which help the compiler work out line-numbers after #includes have been added and comments removed and thus produce helpful error messages. You can suppress these lines using -P.
+
+We can also define 'function-style' macros which take a number of arguments:
+
+#define MULTIPLY(a, b) a * b
+
+// ... later ...
+
+printf("4*8 = %d\n", MULTIPLY(4, 8));
+Which expands to:
+
+printf("4*8 = %d\n", 4 * 8);
+Note that when using these in normal code it is common to place brackets around the macro substitution and also around the arguments:
+
+#define MULTIPLY(a, b) ((a) * (b))
+The reason for this is that without the brackets the following may not do what you'd expect:
+
+printf("%d\n", MULTIPLY(4 + 2, 2 + 8) * 2);
+Without brackets this expands to:
+
+printf("%d\n", 4 + 2 * 2 + 8 * 2);
+Which due to operator precedence rules (multiplies are evaluated first) would not evaluate how you'd expect. The bracketed version, however, works as you'd expect:
+
+printf("%d\n", ((4 + 2) * (2 + 8)) * 2);
+As a final advanced twist, we can define function style macros with varadic arguments. You'll see these most often looking like this:
+
+#define DEBUG(...) fprintf(stderr, __VA_ARGS__)
+
+// ... later, inside a for-loop ...
+
+DEBUG("Something went wrong in iteration: %d", i);
+If we specify the final argument to our macro as being ..., the macro will accept any number of arguments (even zero). These arguments are inserted into your substitution if you write __VA_ARGS__, complete with separating commas between each of the arguments.
+
+This is where sane usage of macros in C ends.
+
+If-statements
+Time for our first bit of magic. Let's try and produce a macro that does the following:
+
+IF_ELSE(condition)(
+    expand to this if condition is not 0
+)(
+    expand to this otherwise
+)
+Unlike a C if-else-statement, the condition will be evaluated in the preprocessor, before your code is even compiled. The usefulness of this will become more apparent later on.
+
+Pattern Matching
+The key to our if-else statement is abusing CPP to perform pattern matching like so:
+
+#define IF_ELSE(condition) _IF_ ## condition
+#define _IF_1(...) __VA_ARGS__ _IF_1_ELSE
+#define _IF_0(...)             _IF_0_ELSE
+
+#define _IF_1_ELSE(...)
+#define _IF_0_ELSE(...) __VA_ARGS__
+Download & Try Me! (Hint: cpp -P filename.txt)
+
+First notice that IF_ELSE takes a single argument: a condition. In our example above you can see that this is then followed by two parenthesised expressions corresponding to the true and false case for the condition respectively.
+
+Lets see how this works in practice by walking through the expansion of the 1 and 0 cases:
+
+Condition is 1 case:
+
+IF_ELSE(1)(it was one)(it was zero)
+_IF_ ## 1 (it was one)(it was zero)
+_IF_1 (it was one)(it was zero)
+it was one _IF_1_ELSE (it was zero)
+it was one
+Condition is 0 case:
+
+IF_ELSE(0)(it was one)(it was zero)
+_IF_ ## 0 (it was one)(it was zero)
+_IF_0 (it was one)(it was zero)
+_IF_0_ELSE (it was zero)
+it was zero
+The trick here is using the CPP concatenation operator (##) to concatenate _IF_ and the condition argument. In this case we expect condition to be either 0 or 1 and so the result is either _IF_1 or _IF_0. These two macros combine with the second set of brackets (the true clause) and either reproduce their arguments or swallow them respectively. They also produce a matching _IF_1_ELSE or _IF_0_ELSE macro which combines with the third set of brackets, swallowing or reproducing the arguments respectively.
+
+Cast to bool!! (and negation)
+Our IF_ELSE is looking pretty good at this point but what if we write:
+
+IF_ELSE(123)(non-zero)(zero)
+Download & Try Me!
+
+In this case it expands to:
+
+_IF_123(non-zero)(zero)
+Unfortunately because _IF_123 is not defined, the macro expansion stops here and we're stuck. What we need is a macro which expands to 0 when its argument is 0 and 1 in any other case. To do this we'll attempt to implement C's famous cast to bool "operator" !!. This "operator" works by first negating the value with ! yielding either 0 or 1, negating this will then yield 0 if the original value was 0 and 1 otherwise. In order to do this with a macro we'll need to implement logical negation.
+
+Before we can implement negation we need a handful of simple macros which at first sight will seem a bit random but don't worry, we'll get there! The first is this guy:
+
+#define SECOND(a, b, ...) b
+Download & Try Me!
+
+This macro takes an two or more arguments and expands to the second argument.
+
+The second macro is a 'probing' macro IS_PROBE: it takes a single argument and expands to 1 if the argument is PROBE() and 0 for any other argument. The macro is implemented as follows:
+
+#define IS_PROBE(...) SECOND(__VA_ARGS__, 0)
+#define PROBE() ~, 1
+Download & Try Me!
+
+The dirty secret to IS_PROBE is that it takes a variable number of arguments and yet we just said it only takes a single argument. If we do indeed give IS_PROBE a single argument, you'll notice that the SECOND macro will in turn expand to 0. If we pass PROBE(), however, this expands to ~, 1 and as a result SECOND(~, 1, 0) will expand to 1.
+
+The trick here is that we can always spot the PROBE() because it (secretly) expands to two arguments (the second of which is 1 while all other valid inputs expand to one input. The choice of ~ as a first argument is essentially arbitrary (since SECOND will always cause it to disappear). However this particular character is a popular convention since if a bug in your macros results in one sneaking out into the final expansion it frequently results in a syntax error in the compiler alerting you to the problem.
+
+Now, using the above we can write our negation macro using the above and a little pattern matching like so:
+
+#define NOT(x) IS_PROBE(_NOT_ ## x)
+#define _NOT_0 PROBE()
+Download & Try Me!
+
+Here we pattern match the case where NOT's argument is 0 and substitute it for the PROBE(). When the argument is non-zero we simply get something like _NOT_some stuff here. Since IS_PROBE will only result in a 1 if it gets the PROBE() and that only happens when we pass in 0, we have a working negation!
+
+Here's a walk-through of the substitutions happening for both the zero and non-zero cases:
+
+Non-zero case:
+NOT(not zero)
+IS_PROBE(_NOT_ ## not zero)
+IS_PROBE(_NOT_not zero)
+SECOND(_NOT_not zero, 0)
+0
+Zero case:
+NOT(0)
+IS_PROBE(_NOT_ ## 0)
+IS_PROBE(_NOT_0)
+IS_PROBE(PROBE())
+IS_PROBE(~, 1)
+SECOND(~, 1, 0)
+1
+With our negation macro working we can trivially make a cast-to-bool macro:
+
+#define BOOL(x) NOT(NOT(x))
+Download & Try Me!
+
+Unfortunately, this doesn't work:
+
+BOOL(0)
+BOOL(123)
+Becomes:
+
+0
+0
+This is all due to the slightly unusual rules surrounding the ## (concatenation) operator. Typically, macro arguments are expanded before they are inserted into the macro body, however, if the argument is inserted next to a ##, it will not be expanded. The result is as follows:
+
+BOOL(123)
+NOT(NOT(123))
+IS_PROBE(_NOT_ ## NOT(123))
+IS_PROBE(_NOT_NOT(123))
+SECOND(_NOT_NOT(123), 0)
+0
+We can force the expansion to take place by hiding the ## using a macro as follows:
+
+#define CAT(a,b) a ## b
+If we redefine NOT as follows:
+
+#define NOT(x) IS_PROBE(CAT(_NOT_, x))
+#define _NOT_0 PROBE()
+Download & Try Me!
+
+This time, because the expansion of NOT does not (directly) contain a ## near its argument, the arguments to NOT are macro expanded before insertion into the macro body. As a result, our double negation, and thus our BOOL macro, works:
+
+BOOL(123)
+NOT(NOT(123))
+NOT(IS_PROBE(CAT(_NOT_, 123)))
+NOT(IS_PROBE(_NOT_123))
+NOT(SECOND(_NOT_123, 0))
+NOT(0)
+IS_PROBE(CAT(_NOT_, 0))
+IS_PROBE(_NOT_0)
+IS_PROBE(PROBE())
+IS_PROBE(~, 1)
+SECOND(~, 1, 0)
+1
+Unfortunately, though, we hit a related problem when we stick this into our IF_ELSE macro:
+
+#define IF_ELSE(condition) _IF_ ## BOOL(condition)
+#define _IF_1(...) __VA_ARGS__ _IF_1_ELSE
+#define _IF_0(...)             _IF_0_ELSE
+
+#define _IF_1_ELSE(...)
+#define _IF_0_ELSE(...) __VA_ARGS__
+
+IF_ELSE(123)(is non zero)(is zero)
+Download & Try Me!
+
+Which produces:
+
+_IF_BOOL(123)(is non zero)(is zero)
+The concatenation is happening before our BOOL macro is expanded and of course _IF_BOOL(123) is not a macro and so it remains unexpanded. In order to force the BOOL macro to be expanded before the concatenation we need to do the following:
+
+#define IF_ELSE(condition) _IF_ELSE(BOOL(condition))
+#define _IF_ELSE(condition) CAT(_IF_, condition)
+
+#define _IF_1(...) __VA_ARGS__ _IF_1_ELSE
+#define _IF_0(...)             _IF_0_ELSE
+
+#define _IF_1_ELSE(...)
+#define _IF_0_ELSE(...) __VA_ARGS__
+Download & Try Me!
+
+We now have two layers of indirection between IF_ELSE and the concatenation. The expansion looks like this:
+
+IF_ELSE(123)(is non zero)(is zero)
+_IF_ELSE(BOOL(123))(is non zero)(is zero)
+(Expansion of BOOL not shown)
+_IF_ELSE(1)(is non zero)(is zero)
+CAT(_IF_, 1)(is non zero)(is zero)
+_IF_ ## 1(is non zero)(is zero)
+_IF_1(is non zero)(is zero)
+is non zero _IF_1_ELSE(is zero)
+is non zero
+Since IF_ELSE ensures that BOOL(condition) is expanded when it is an argument to _IF_ELSE, the BOOL macro is fully expanded to 1 when it reaches the CAT macro. Since CAT uses ##, its inputs would not be expanded and so this step is critical. Also note that if we didn't use the CAT macro and instead just used ##, _IF_ELSE's arguments would not get expanded and so we'd hit the problem we saw before.
+
+So after all that, at long last, we now have a working IF_ELSE macro!
+
+Iterators
+Iterators are a tricky beast in CPP because recursive macros are explicitly blocked. For example if we write:
+
+#define RECURSIVE() I am RECURSIVE()
+RECURSIVE() rather boringly expands to
+
+I am RECURSIVE()
+What happens is that when RECURSIVE() is expanded, if RECURSIVE appears in its expansion it is 'painted blue' (macro language jargon) which prevents it ever being expanded as a macro. Clearly we can't rely on simple recursion to implement. One could of course exhaustively define $n$ macros for iterating up to $n$ times but this would be tiresome and extremely limiting.
+
+Luckily with some more detailed knowledge of how CPP expands macros we can create an iterator which can iterate $O(2^n)$ times with only $O(n)$ macro definitions.
+
+Forcing CPP to make multiple passes
+Lets start by looking at the following snippet:
+
+#define EMPTY()
+#define A(n) I like the number n
+
+A (123)
+A EMPTY() (123)
+Download & Try Me!
+
+This expands to:
+
+I like the number 123
+A (123)
+This might seem a little odd since we can see that A (123) should have be expanded but hasn't been. Lets look at the process CPP goes through when expanding the last line of the example:
+
+CPP sees the token A but since it isn't followed by a set of brackets, it is not considered a macro.
+
+A EMPTY() (123)
+^
+Next it sees EMPTY()
+
+A EMPTY() (123)
+  ^
+This is substituted according to our #define:
+
+A (123)
+  ^
+At this point the macro expander sees (123) which cannot be expanded and so expansion completes:
+
+A (123)
+       ^
+Clearly, an second expansion pass is required. We can force this to happen by making a macro like so:
+
+#define EVAL1(...) __VA_ARGS__
+
+EVAL1(A EMPTY() (123))
+Download & Try Me!
+
+This expands to:
+
+I like the number 123
+The reason this works is that when CPP encounters a function-style macro, it recursively expands the macro's arguments before substituting the macro's body and expanding that.
+
+So, with that in mind, lets watch what happens in detail:
+
+CPP sees the token EVAL1 followed by a set of brackets. This corresponds with a function-style macro.
+
+EVAL1(A EMPTY() (123))
+^
+CPP now takes the arguments and separately expands these. It sees the token A but since it isn't followed by a set of brackets, it is not considered a macro.
+
+A EMPTY() (123)
+^
+Next it sees EMPTY()
+
+A EMPTY() (123)
+  ^
+CPP takes the arguments and exppands these, which is rather boring since there are no arguments:
+^
+The equally empty body of EMPTY() is then substituted in and expansion continues.
+
+A (123)
+  ^
+At this point the macro expander sees (123) which cannot be expanded and so expansion completes.
+
+A (123)
+       ^
+The arguments to EVAL1, having been expanded, are now substituted into the macro body of EVAL1 and the macro expander continues from the start of EVAL1's expansion. It sees A (123) and expands this.
+
+A (123)
+^
+This leaves us with the following:
+
+I like the number 123
+^
+A pass of the macro expander will now find no further substitutions and so the expansion completes.
+
+I like the number 123
+                     ^
+OK, so clearly using this trick we can force the macro expander to make additional passes when expanding macros. In fact, we can cause the macro expander to make many additional passes:
+
+#define EVAL(...) EVAL1024(__VA_ARGS__)
+#define EVAL1024(...) EVAL512(EVAL512(__VA_ARGS__))
+#define EVAL512(...) EVAL256(EVAL256(__VA_ARGS__))
+#define EVAL256(...) EVAL128(EVAL128(__VA_ARGS__))
+#define EVAL128(...) EVAL64(EVAL64(__VA_ARGS__))
+#define EVAL64(...) EVAL32(EVAL32(__VA_ARGS__))
+#define EVAL32(...) EVAL16(EVAL16(__VA_ARGS__))
+#define EVAL16(...) EVAL8(EVAL8(__VA_ARGS__))
+#define EVAL8(...) EVAL4(EVAL4(__VA_ARGS__))
+#define EVAL4(...) EVAL2(EVAL2(__VA_ARGS__))
+#define EVAL2(...) EVAL1(EVAL1(__VA_ARGS__))
+#define EVAL1(...) __VA_ARGS__
+Before we move on, lets define the following macro based on what we've just learnt:
+
+#define DEFER1(m) m EMPTY()
+This macro can be used to defer the expansion of another macro to the next expansion pass as follows:
+
+#define B(n) n is my favourite!
+DEFER1(B)(321)
+Which expands to:
+
+B (321)
+Requiring a further expansion pass to become:
+
+321 is my favourite!
+Turning multiple expansion passes into recursion
+As this subheading suggests, its time to try and implement recursion: one possible basis for any form of iteration. Previously we stated that we cannot allow a macro to expand to itself because it will get painted blue and thus never get expanded. However, if the recursive expansion to takes place in a separate macro expansion pass, CPP won't realise recursion is taking place and thus we can get away with it.
+
+Take a look at the following macro:
+
+#define RECURSE() I am recursive, look: DEFER1(_RECURSE)()()
+#define _RECURSE() RECURSE
+
+RECURSE()
+Download & Try Me!
+
+It will expand in a single pass to:
+
+I am recursive, look: _RECURSE ()()
+Note that we didn't expand to the RECURSE() macro so everything is fine so far.
+
+If we force a second macro expansion, for example:
+
+EVAL1(RECURSE())
+We get:
+
+I am recursive, look: I am recursive, look: _RECURSE ()()
+In this second pass, the macro expander expands _RECURSE () giving:
+
+I am recursive, look: RECURSE ()
+It is critical that _RECURSE expands to RECURSE and not RECURSE() since the former cannot be expanded in isolation since RECURSE is a function-style macro. If we used the latter, RECURSE would expand to contain _RECURSE which would then be painted blue and no number of evaluations will cause it to expand.
+
+The expansion of _RECURSE(), RECURSE, combines with the extra pair of brackets which follows which, completes a second iteration of our recursion.
+
+Each additional evaluation results in an iteration of the recursive macro. Obviously execution is not truly recursive in that the recursion depth is limited to the number of evaluations which in turn is bounded. However, since the number of evaluations can be trivially made very large, for any practical purpose the recursion depth should be sufficient.
+
+Turning recursion into an iterator
+Finally, lets do what we set out to do and implement a MAP macro which applies the specified macro to every element of a list of arguments. Clearly we can make a start based on our recursion example:
+
+#define MAP(m, first, ...) m(first) DEFER1(_MAP)()(m, __VA_ARGS__)
+#define _MAP() MAP
+Our MAP macro evaluates the passed macro passing in the first argument. We then recursively call ourselves passing the supplied macro and remaining arguments. For example:
+
+#define GREET(x) Hello, x!
+EVAL8(MAP(GREET, Mum, Dad, Adam, Joe))
+Download & Try Me!
+
+And it largely works:
+
+Hello, Mum! Hello, Dad! Hello, Adam! Hello, Joe! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! Hello, ! _MAP ()(GREET, )
+But alas, our recursion never terminates. We must come up with a macro which can detect when there are no more arguments and terminate the recursion. We can do this as follows:
+
+#define FIRST(a, ...) a
+
+#define HAS_ARGS(...) BOOL(FIRST(_END_OF_ARGUMENTS_ __VA_ARGS__)())
+#define _END_OF_ARGUMENTS_() 0
+Download & Try Me!
+
+When HAS_ARGS is passed no arguments, expansion proceeds as follows:
+
+HAS_ARGS()
+BOOL(FIRST(_END_OF_ARGUMENTS_)())
+BOOL(_END_OF_ARGUMENTS_())
+BOOL(0)
+0
+However, when HAS_ARGS has any number of arguments:
+
+HAS_ARGS(some, arguments, here)
+BOOL(FIRST(_END_OF_ARGUMENTS_ some, arguments, here)())
+BOOL(_END_OF_ARGUMENTS_ some())
+1
+The key trick is that the first argument passed to HAS_ARGS is placed between _END_OF_ARGUMENTS_ and the brackets that would cause it to expand to 0. As a result, the BOOL macro's argument will be non-zero and thus evaluate to 1.
+
+Now we can use HAS_ARGS along with our IF_ELSE macro to make our MAP terminate cleanly:
+
+#define MAP(m, first, ...)           \
+  m(first)                           \
+  IF_ELSE(HAS_ARGS(__VA_ARGS__))(    \
+    DEFER1(_MAP)()(m, __VA_ARGS__)   \
+  )(                                 \
+    /* Do nothing, just terminate */ \
+  )
+#define _MAP() MAP
+Download & Try Me!
+
+Lets try it out:
+
+EVAL(MAP(GREET, Mum, Dad, Adam, Joe))
+And lo and behold:
+
+Hello, Mum! MAP(GREET, Dad, Adam, Joe)
+Oh no! Now it doesn't recurse! You'll remember that earlier we prevented _MAP from being expanded in a single pass (using DEFER1) in order to hide the recursive expansion from CPP. What's happened here is that our DEFER1 has been moved into the true-clause of our IF_ELSE statement which becomes an argument to a macro and, as a result, receives an additional pass of the macro expander and so _MAP() gets expanded to MAP which in turn gets painted blue, killing the recursion.
+
+To get around this we need to defer the expansion of _MAP for two passes of macro expansion. We can extend our DEFER1 macro like so to make version which defer for successively greater numbers of expansion:
+
+#define DEFER2(m) m EMPTY EMPTY()()
+#define DEFER3(m) m EMPTY EMPTY EMPTY()()()
+#define DEFER4(m) m EMPTY EMPTY EMPTY EMPTY()()()()
+// ...
+In this case we simply need to defer for two expansion passes so DEFER2 is sufficient:
+
+#define MAP(m, first, ...)           \
+  m(first)                           \
+  IF_ELSE(HAS_ARGS(__VA_ARGS__))(    \
+    DEFER2(_MAP)()(m, __VA_ARGS__)   \
+  )(                                 \
+    /* Do nothing, just terminate */ \
+  )
+#define _MAP() MAP
+Download & Try Me!
+
+And so, at long last:
+
+EVAL(MAP(GREET, Mum, Dad, Adam, Joe))
+Expands to:
+
+Hello, Mum! Hello, Dad! Hello, Adam! Hello, Joe!
+And with that, congratulations, you've just implemented iteration in the C-preprocessor!
+
+Learning More
+The CPP manual is, of course, a good place for detailed and precise information on CPP's behaviour though it doesn't cover interesting abuses such as those above.
+
+My own first introduction to CPP abuse came from pfultz2's excellent introduction to the matter.
+
+If you're interested in a non-trivial application of these techniques, take a look at my own 'EZSHET' library which can be found on GitHub as part of uSHET, a home automation library. EZSHET generates C code to unpack and type-check arbitrary JSON strings at compile time using some of these tricks. You can start with lib/cpp_magic.h for the generic CPP abuse (from which much of this article is taken). You should then move on to the innards to discover how this is used to generate code like that listed in the appendix of the EZSHET tutorial.
+
+Another popular place to see abusive CPP macros in action is Boost's CPP library, built for the days when template meta-programming wasn't hard-core enough to stand alone.
+
